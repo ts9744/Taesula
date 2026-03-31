@@ -84,7 +84,7 @@ QR 인식 (OpenCV)
 
 ### 🤖 Hardware
 
-- C/C++ (ESP32)
+- C++ (ESP32)
 - DC 모터 + 로봇 키트
 - 초음파 센서
 - USB 카메라
