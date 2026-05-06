@@ -6,7 +6,7 @@ cursor = conn.cursor()
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS locations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    zone_name TEXT,
+    zone_name TEXT UNIQUE,
     x INTEGER,
     y INTEGER
 )

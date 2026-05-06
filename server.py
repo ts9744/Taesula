@@ -54,20 +54,35 @@ def get_item(qr_code: str):
     conn = get_db()
     cursor = conn.cursor()
 
-    cursor.execute(
-        "SELECT id, name, qr_code, destination_id FROM items WHERE qr_code=?",
-        (qr_code,)
-    )
+    cursor.execute("""
+        SELECT
+            items.id,
+            items.name,
+            items.qr_code,
+            locations.id,
+            locations.zone_name,
+            locations.x,
+            locations.y
+        FROM items
+        JOIN locations
+        ON items.destination_id = locations.id
+        WHERE items.qr_code = ?
+    """, (qr_code,))
 
     row = cursor.fetchone()
     conn.close()
 
     if row:
         return {
-            "id": row[0],
+            "item_id": row[0],
             "name": row[1],
             "qr_code": row[2],
-            "destination_id": row[3]
+            "destination": {
+                "location_id": row[3],
+                "zone_name": row[4],
+                "x": row[5],
+                "y": row[6]
+            }
         }
 
     return {"message": "not found"}
@@ -107,7 +122,7 @@ def delete_item(qr_code: str):
 
 
 # =========================
-# LOCATIONS (선택 but 추천)
+# LOCATIONS
 # =========================
 
 @app.post("/locations")
