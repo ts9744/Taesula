@@ -205,3 +205,14 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+
+# PlatformIO build files
+Taesula_Robot_Control/.pio/
+
+# VS Code personal settings
+.vscode/
+Taesula_Robot_Control/.vscode/
+
+# Python virtual environment
+venv/
