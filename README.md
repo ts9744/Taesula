@@ -159,3 +159,42 @@ project/
 ## 📎 Github Repository
 
 👉 https://github.com/ts9744/Taesula
+
+
+
+## 김건우 - 로봇 제어 및 센서 파트 진행 상황
+
+### 1. ESP32 개발 환경 설정
+
+VS Code와 PlatformIO를 이용하여 ESP32 개발 환경을 구성하였다.  
+USB-SERIAL CH340(COM3) 포트를 통해 ESP32 보드가 정상적으로 인식되는 것을 확인하였고, 기본 Blink 테스트를 통해 코드 업로드 및 실행이 정상적으로 이루어지는 것을 검증하였다.
+
+### 2. 기본 제어 명령 테스트
+
+Serial Monitor를 이용하여 PC에서 ESP32로 이동 명령을 전송하는 테스트를 진행하였다.
+
+사용한 명령은 다음과 같다.
+
+- F: Forward
+- B: Backward
+- L: Left
+- R: Right
+- S: Stop
+
+테스트 결과, 각 명령 입력 시 `moveForward()`, `moveBackward()`, `turnLeft()`, `turnRight()`, `stopMotor()` 함수가 정상적으로 호출되는 것을 확인하였다.  
+현재는 실제 모터 연결 전 단계이므로 LED와 Serial 출력을 이용하여 제어 분기 로직을 검증하였다.
+
+### 3. 초음파 센서 연동 준비
+
+초음파 센서를 이용한 장애물 감지 기능을 구현하기 위해 `TRIG_PIN`, `ECHO_PIN`, `OBSTACLE_DISTANCE`를 설정하였다.  
+현재 코드에는 거리 측정 함수 `getDistanceCm()`와 장애물 감지 함수 `isObstacleDetected()`를 포함하였다.
+
+추후 초음파 센서를 실제로 연결한 뒤, `D` 명령을 통해 거리값을 확인하고 15cm 이하의 장애물 감지 시 정지 동작이 수행되는지 테스트할 예정이다.
+
+### 4. 다음 구현 예정
+
+- 초음파 센서 실제 연결 및 거리 측정 테스트
+- 장애물 감지 시 정지 동작 검증
+- 모터 드라이버 연결
+- F/B/L/R/S 명령 기반 실제 모터 제어 테스트
+- 서버 또는 라즈베리파이에서 전달되는 이동 명령 수신 구조 확장
