@@ -9,7 +9,7 @@ def a_star(grid, start, goal):
     cols = len(grid[0])
 
     # 이동 방향: 상, 하, 좌, 우
-    directions = [(-1, 0), (1, 0), (0, -1), (0, 1), (1, 1), (1, -1), (-1, 1), (-1, -1)]
+    directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
 
     open_list = []
     heapq.heappush(open_list, (0, start))
@@ -19,7 +19,7 @@ def a_star(grid, start, goal):
     f_cost = {start: heuristic(start, goal)}
 
     while open_list:
-        current_f, current = heapq.heappop(open_list)
+        current = heapq.heappop(open_list)
 
         if current == goal:
             # 경로 복원
@@ -53,24 +53,3 @@ def a_star(grid, start, goal):
                 heapq.heappush(open_list, (f_cost[neighbor], neighbor))
 
     return None  # 경로가 없는 경우
-
-
-# 예시 맵
-# 0 = 이동 가능, 1 = 장애물
-grid = [
-    [0, 0, 0, 0, 0],
-    [1, 1, 0, 1, 0],
-    [0, 0, 0, 1, 0],
-    [0, 1, 1, 0, 0],
-    [0, 0, 0, 0, 0]
-]
-
-start = (0, 0)
-goal = (4, 4)
-
-path = a_star(grid, start, goal)
-
-if path:
-    print("최단 경로:", path)
-else:
-    print("경로를 찾을 수 없습니다.")
