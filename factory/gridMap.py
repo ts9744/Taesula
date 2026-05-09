@@ -231,7 +231,7 @@ class GridControlGUI:
         data = {
             "rows": self.rows,
             "cols": self.cols,
-            "cell_size_cm": 50,
+            "cell_size_cm": self.cell_size,
             "start": self.start,
             "goal": self.goal,
             "grid": self.get_pathfinding_grid(),
@@ -256,7 +256,7 @@ class GridControlGUI:
         data = {
             "rows": self.rows,
             "cols": self.cols,
-            "cell_size_cm": 50,
+            "cell_size_cm": self.cell_size,
             "start": self.start,
             "goal": self.goal,
             "raw_grid": self.grid,

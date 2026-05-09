@@ -19,7 +19,7 @@ def a_star(grid, start, goal):
     f_cost = {start: heuristic(start, goal)}
 
     while open_list:
-        current = heapq.heappop(open_list)
+        current_f, current = heapq.heappop(open_list)
 
         if current == goal:
             # 경로 복원
