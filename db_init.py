@@ -18,16 +18,17 @@ CREATE TABLE IF NOT EXISTS items (
     name TEXT,
     qr_code TEXT UNIQUE,
     destination_id INTEGER,
+    status TEXT DEFAULT 'waiting',
     FOREIGN KEY(destination_id) REFERENCES locations(id)
 )
 """)
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS robot_status (
-    id INTEGER PRIMARY KEY,
-    current_x INTEGER,
-    current_y INTEGER,
-    status TEXT
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    current_x INTEGER DEFAULT 0,
+    current_y INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'idle'
 )
 """)
 
