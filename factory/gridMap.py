@@ -7,6 +7,7 @@ class GridControlGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Factory Grid Control GUI")
+        self.root.geometry("850x800")
 
         self.rows = 10
         self.cols = 10
@@ -298,9 +299,3 @@ class GridControlGUI:
 
         except Exception as e:
             messagebox.showerror("불러오기 오류", f"파일을 불러오는 중 오류가 발생했습니다.\n{e}")
-
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = GridControlGUI(root)
-    root.mainloop()
