@@ -8,17 +8,24 @@ app = FastAPI(
     version="1.0.0"
 )
 
-robot_status = "idle"
-current_command = "stop"
-current_path = []
+Direction = Literal["forward", "backward", "left", "right", "stop"]
+RobotStatus = Literal["idle", "moving", "stopped", "obstacle_detected", "error"]
+
+robot_status: RobotStatus = "idle"
+current_command: Direction = "stop"
+current_path: list[Direction] = []
 
 
 class CommandRequest(BaseModel):
-    direction: Literal["forward", "backward", "left", "right", "stop"]
+    direction: Direction
 
 
 class PathRequest(BaseModel):
-    path: list[Literal["forward", "backward", "left", "right", "stop"]]
+    path: list[Direction]
+
+
+class StatusRequest(BaseModel):
+    robot_status: RobotStatus
 
 
 @app.get("/")
@@ -32,6 +39,18 @@ def get_status():
         "robot_status": robot_status,
         "current_command": current_command,
         "current_path": current_path
+    }
+
+
+@app.post("/status")
+def update_status(status_data: StatusRequest):
+    global robot_status
+
+    robot_status = status_data.robot_status
+
+    return {
+        "message": "status updated",
+        "robot_status": robot_status
     }
 
 
@@ -61,4 +80,24 @@ def set_path(path_data: PathRequest):
     return {
         "message": "path updated",
         "path": current_path
+    }
+
+
+@app.get("/next-command")
+def get_next_command():
+    global current_command, current_path
+
+    if not current_path:
+        current_command = "stop"
+        return {
+            "direction": "stop",
+            "message": "path is empty",
+            "remaining_path": current_path
+        }
+
+    current_command = current_path.pop(0)
+
+    return {
+        "direction": current_command,
+        "remaining_path": current_path
     }
