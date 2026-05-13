@@ -210,6 +210,8 @@ marimo/_lsp/
 __marimo__/
 
 
+# Test file
+test.py
 # PlatformIO build files
 Taesula_Robot_Control/.pio/
 
