@@ -1,6 +1,6 @@
 import sqlite3
 
-conn = sqlite3.connect("warehouse.db")
+conn = sqlite3.connect("SIDA_system.db")
 cursor = conn.cursor()
 
 cursor.execute("""
@@ -30,6 +30,11 @@ CREATE TABLE IF NOT EXISTS robot_status (
     current_y INTEGER DEFAULT 0,
     status TEXT DEFAULT 'idle'
 )
+""")
+
+cursor.execute("""
+INSERT OR IGNORE INTO robot_status (id, current_x, current_y, status)
+VALUES (1, 0, 0, 'idle')
 """)
 
 conn.commit()
