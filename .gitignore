@@ -3,6 +3,9 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Database
+*.db
+
 # C extensions
 *.so
 
@@ -209,3 +212,12 @@ __marimo__/
 
 # Test file
 test.py
+# PlatformIO build files
+Taesula_Robot_Control/.pio/
+
+# VS Code personal settings
+.vscode/
+Taesula_Robot_Control/.vscode/
+
+# Python virtual environment
+venv/
