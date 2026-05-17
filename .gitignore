@@ -3,6 +3,9 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Database
+*.db
+
 # C extensions
 *.so
 
@@ -207,6 +210,8 @@ marimo/_lsp/
 __marimo__/
 
 
+# Test file
+test.py
 # PlatformIO build files
 Taesula_Robot_Control/.pio/
 
