@@ -2,6 +2,16 @@ from typing import Literal
 from fastapi import FastAPI
 from pydantic import BaseModel
 import sqlite3
+import sys
+import json
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.append(str(BASE_DIR))
+
+DB_PATH = BASE_DIR / "SIDA_system.db"
+
+from algorithm.astar import a_star
 
 app = FastAPI(
     title="Robot Communication API",
@@ -11,7 +21,25 @@ app = FastAPI(
 
 # DB 연결 함수
 def get_db():
-    return sqlite3.connect("SIDA_system.db")
+    return sqlite3.connect(DB_PATH)
+
+def load_grid_from_db():
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT pathfinding_grid
+        FROM grid_map
+        WHERE id = 1
+    """)
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row or row[0] is None:
+        return None
+
+    return json.loads(row[0])
 
 current_command = "stop"
 current_path = []
@@ -205,6 +233,136 @@ def delete_item(qr_code: str):
 
     return {"message": "deleted"}
 
+# =========================
+# ROUTE SEARCH
+# =========================
+
+@app.get("/route/{qr_code}")
+def get_route_by_qr(qr_code: str):
+    global current_path
+
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT
+            items.id,
+            items.name,
+            items.qr_code,
+            items.status,
+            locations.zone_name,
+            locations.x,
+            locations.y
+        FROM items
+        JOIN locations
+        ON items.destination_id = locations.id
+        WHERE items.qr_code = ?
+    """, (qr_code,))
+
+    item_row = cursor.fetchone()
+
+    if not item_row:
+        conn.close()
+        return {"message": "item not found"}
+
+    cursor.execute("""
+        SELECT current_x, current_y, status
+        FROM robot_status
+        WHERE id = 1
+    """)
+
+    robot_row = cursor.fetchone()
+    conn.close()
+
+    if not robot_row:
+        return {"message": "robot status not found"}
+
+    grid = load_grid_from_db()
+
+    if grid is None:
+        return {
+            "message": "grid map not found",
+            "detail": "grid_map 테이블에 pathfinding_grid 데이터 필요"
+        }
+
+    item_id = item_row[0]
+    item_name = item_row[1]
+    item_qr_code = item_row[2]
+    item_status = item_row[3]
+    zone_name = item_row[4]
+    goal_x = item_row[5]
+    goal_y = item_row[6]
+
+    current_x = robot_row[0]
+    current_y = robot_row[1]
+    robot_status = robot_row[2]
+
+    start = (current_x, current_y)
+    goal = (goal_x, goal_y)
+
+    rows = len(grid)
+    cols = len(grid[0])
+
+    if not (0 <= start[0] < rows and 0 <= start[1] < cols):
+        return {
+            "message": "start position is out of grid range",
+            "start": [start[0], start[1]]
+        }
+
+    if not (0 <= goal[0] < rows and 0 <= goal[1] < cols):
+        return {
+            "message": "goal position is out of grid range",
+            "goal": [goal[0], goal[1]]
+        }
+
+    if grid[start[0]][start[1]] == 1:
+        return {
+            "message": "start position is obstacle",
+            "start": [start[0], start[1]]
+        }
+
+    if grid[goal[0]][goal[1]] == 1:
+        return {
+            "message": "goal position is obstacle",
+            "goal": [goal[0], goal[1]]
+        }
+
+    path = a_star(grid, start, goal)
+
+    if path is None:
+        return {
+            "message": "path not found",
+            "qr_code": item_qr_code,
+            "item_name": item_name,
+            "start": [start[0], start[1]],
+            "goal": [goal[0], goal[1]]
+        }
+
+    path_list = [[x, y] for x, y in path]
+    current_path = path_list
+
+    return {
+        "message": "route found",
+        "qr_code": item_qr_code,
+        "item": {
+            "item_id": item_id,
+            "name": item_name,
+            "status": item_status
+        },
+        "robot": {
+            "current_x": current_x,
+            "current_y": current_y,
+            "status": robot_status
+        },
+        "destination": {
+            "zone_name": zone_name,
+            "x": goal_x,
+            "y": goal_y
+        },
+        "start": [start[0], start[1]],
+        "goal": [goal[0], goal[1]],
+        "path": path_list
+    }
 
 # =========================
 # LOCATIONS
@@ -321,4 +479,4 @@ def update_robot_status(current_x: int, current_y: int, status: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("server:app", host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)
