@@ -4,10 +4,10 @@ Direction = Literal["forward", "backward", "left", "right", "stop"]
 RobotStatus = Literal["idle", "moving", "stopped", "obstacle_detected", "error"]
 
 class CommandRequest(BaseModel):
-direction: Direction
+    direction: Direction
 
 class PathRequest(BaseModel):
-path: list[Direction]
+    path: list[Direction]
 
 class StatusRequest(BaseModel):
-robot_status: RobotStatus
+    robot_status: RobotStatus
