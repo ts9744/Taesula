@@ -55,7 +55,7 @@ class FactoryGUI:
     def create_grid(self):
         for widget in self.root.winfo_children():
             widget.destroy()
-        GridControlGUI(self.root)
+        GridControlGUI(self.root, back_callback=self.create_widgets)
 
 if __name__ == "__main__":
     root = tk.Tk()

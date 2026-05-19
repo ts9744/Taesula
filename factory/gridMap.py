@@ -4,8 +4,9 @@ import json
 
 
 class GridControlGUI:
-    def __init__(self, root):
+    def __init__(self, root, back_callback=None):
         self.root = root
+        self.back_callback = back_callback
         self.root.title("Factory Grid Control GUI")
         self.root.geometry("850x800")
 
@@ -30,6 +31,15 @@ class GridControlGUI:
         self.create_grid()
 
     def create_widgets(self):
+        back_frame = tk.Frame(self.root)
+        back_frame.pack(fill="x", padx=10, pady=(10,0))
+
+        tk.Button(
+            back_frame,
+            text="뒤로가기",
+            command=self.go_back
+        ).pack(side="left")
+
         top_frame = tk.Frame(self.root)
         top_frame.pack(pady=10)
 
@@ -73,6 +83,16 @@ class GridControlGUI:
         self.output_text = tk.Text(self.root, height=10, width=80)
         self.output_text.pack(padx=10, pady=10)
 
+    def go_back(self):
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        
+        self.root.title("Smart Logistics Robot")
+        self.root.geometry("350x250")
+
+        if self.back_callback:
+            self.back_callback()
+    
     def create_grid(self):
         self.grid = [[0 for _ in range(self.cols)] for _ in range(self.rows)]
         self.start = None
