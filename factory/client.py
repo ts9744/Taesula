@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox
 from gridMap import GridControlGUI
+from itemScan import ItemScanGUI
 
 
 class FactoryGUI:
@@ -47,7 +48,9 @@ class FactoryGUI:
         grid_button.pack(pady=8)
 
     def recognize_item(self):
-        messagebox.showinfo("물품 인식", "물품 인식 기능은 추후 연결 예정입니다.")
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        ItemScanGUI(self.root, back_callback=self.create_widgets)
 
     def register_item(self):
         messagebox.showinfo("물품 등록", "물품 등록 기능은 추후 연결 예정입니다.")
