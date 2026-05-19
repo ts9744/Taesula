@@ -2,7 +2,8 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 import json
 import sqlite3
-
+import os
+import sys
 
 class GridControlGUI:
     def __init__(self, root, back_callback=None):
@@ -20,7 +21,7 @@ class GridControlGUI:
         self.goal = None
         self.grid = []
 
-        self.db_path = "../SIDA_system.db"
+        self.db_path = self.get_db_path()
 
         self.colors = {
             0: "white",        # 이동 가능
@@ -230,6 +231,16 @@ class GridControlGUI:
             path_grid.append(row_data)
 
         return path_grid
+    
+    def get_db_path(self):
+        if getattr(sys, 'frozen', False):
+            # exe로 실행될 때 기준
+            base_dir = os.path.dirname(sys.executable)
+        else:
+            # python gridMap.py / client.py로 실행될 때 기준
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+
+        return os.path.join(os.path.join(base_dir, "..", "SIDA_system.db"))
 
     def save_grid_to_db(self):
         raw_grid_json = json.dumps(self.grid, ensure_ascii=False)
