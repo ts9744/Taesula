@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import messagebox, filedialog
 import json
+import sqlite3
 
 
 class GridControlGUI:
@@ -18,6 +19,8 @@ class GridControlGUI:
         self.start = None
         self.goal = None
         self.grid = []
+
+        self.db_path = "../SIDA_system.db"
 
         self.colors = {
             0: "white",        # 이동 가능
@@ -54,9 +57,7 @@ class GridControlGUI:
         self.col_entry.grid(row=0, column=3, padx=5)
 
         tk.Button(top_frame, text="격자 생성", command=self.reset_grid).grid(row=0, column=4, padx=10)
-        tk.Button(top_frame, text="저장", command=self.save_grid).grid(row=0, column=5, padx=5)
-        tk.Button(top_frame, text="불러오기", command=self.load_grid).grid(row=0, column=6, padx=5)
-        tk.Button(top_frame, text="초기화", command=self.clear_grid).grid(row=0, column=7, padx=5)
+        tk.Button(top_frame, text="초기화", command=self.clear_grid).grid(row=0, column=5, padx=5)
 
         mode_frame = tk.Frame(self.root)
         mode_frame.pack(pady=5)
@@ -65,7 +66,6 @@ class GridControlGUI:
         tk.Button(mode_frame, text="장애물", command=lambda: self.set_mode("obstacle")).grid(row=0, column=1, padx=5)
         tk.Button(mode_frame, text="시작점", command=lambda: self.set_mode("start")).grid(row=0, column=2, padx=5)
         tk.Button(mode_frame, text="목적지", command=lambda: self.set_mode("goal")).grid(row=0, column=3, padx=5)
-        tk.Button(mode_frame, text="위험구역", command=lambda: self.set_mode("danger")).grid(row=0, column=4, padx=5)
 
         self.status_label = tk.Label(self.root, text="현재 모드: 장애물", font=("Arial", 11))
         self.status_label.pack(pady=5)
@@ -77,11 +77,8 @@ class GridControlGUI:
         bottom_frame = tk.Frame(self.root)
         bottom_frame.pack(pady=5)
 
-        tk.Button(bottom_frame, text="Python grid 출력", command=self.print_python_grid).grid(row=0, column=0, padx=5)
-        tk.Button(bottom_frame, text="JSON 출력", command=self.print_json_data).grid(row=0, column=1, padx=5)
-
-        self.output_text = tk.Text(self.root, height=10, width=80)
-        self.output_text.pack(padx=10, pady=10)
+        tk.Button(bottom_frame, text="DB 저장", command=self.save_grid_to_db).grid(row=0, column=0, padx=5)
+        tk.Button(bottom_frame, text="DB 불러오기", command=self.load_grid_from_db).grid(row=0, column=1, padx=5)
 
     def go_back(self):
         for widget in self.root.winfo_children():
@@ -156,7 +153,6 @@ class GridControlGUI:
             "obstacle": "장애물",
             "start": "시작점",
             "goal": "목적지",
-            "danger": "위험구역"
         }
 
         self.status_label.config(text=f"현재 모드: {mode_text[mode]}")
@@ -235,78 +231,98 @@ class GridControlGUI:
 
         return path_grid
 
-    def print_python_grid(self):
-        path_grid = self.get_pathfinding_grid()
-
-        self.output_text.delete("1.0", tk.END)
-        self.output_text.insert(tk.END, "grid = [\n")
-
-        for row in path_grid:
-            self.output_text.insert(tk.END, f"    {row},\n")
-
-        self.output_text.insert(tk.END, "]\n\n")
-        self.output_text.insert(tk.END, f"start = {self.start}\n")
-        self.output_text.insert(tk.END, f"goal = {self.goal}\n")
-
-    def print_json_data(self):
-        data = {
-            "rows": self.rows,
-            "cols": self.cols,
-            "cell_size_cm": self.cell_size,
-            "start": self.start,
-            "goal": self.goal,
-            "grid": self.get_pathfinding_grid(),
-            "legend": {
-                "0": "movable",
-                "1": "obstacle"
-            }
-        }
-
-        self.output_text.delete("1.0", tk.END)
-        self.output_text.insert(tk.END, json.dumps(data, indent=4, ensure_ascii=False))
-
-    def save_grid(self):
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".json",
-            filetypes=[("JSON files", "*.json")]
-        )
-
-        if not file_path:
-            return
-
-        data = {
-            "rows": self.rows,
-            "cols": self.cols,
-            "cell_size_cm": self.cell_size,
-            "start": self.start,
-            "goal": self.goal,
-            "raw_grid": self.grid,
-            "pathfinding_grid": self.get_pathfinding_grid()
-        }
-
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
-
-        messagebox.showinfo("저장 완료", "격자 지도가 저장되었습니다.")
-
-    def load_grid(self):
-        file_path = filedialog.askopenfilename(
-            filetypes=[("JSON files", "*.json")]
-        )
-
-        if not file_path:
-            return
+    def save_grid_to_db(self):
+        raw_grid_json = json.dumps(self.grid, ensure_ascii=False)
+        pathfinding_grid_json = json.dumps(self.get_pathfinding_grid(), ensure_ascii=False)
 
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
 
-            self.rows = data["rows"]
-            self.cols = data["cols"]
-            self.grid = data["raw_grid"]
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS grid_map (
+                    id INTEGER PRIMARY KEY,
+                    rows INTEGER NOT NULL,
+                    cols INTEGER NOT NULL,
+                    raw_grid TEXT NOT NULL,
+                    pathfinding_grid TEXT NOT NULL,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
 
-            self.start = tuple(data["start"]) if data["start"] is not None else None
-            self.goal = tuple(data["goal"]) if data["goal"] is not None else None
+            cur.execute("SELECT id FROM grid_map WHERE id = 1")
+            row = cur.fetchone()
+
+            if row:
+                cur.execute("""
+                    UPDATE grid_map
+                    SET rows = ?,
+                        cols = ?,
+                        raw_grid = ?,
+                        pathfinding_grid = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE id = 1
+                """, (
+                    self.rows,
+                    self.cols,
+                    raw_grid_json,
+                    pathfinding_grid_json
+                ))
+            else:
+                cur.execute("""
+                    INSERT INTO grid_map (
+                        id,
+                        rows,
+                        cols,
+                        raw_grid,
+                        pathfinding_grid
+                    )
+                    VALUES (?, ?, ?, ?, ?)
+                """, (
+                    1,
+                    self.rows,
+                    self.cols,
+                    raw_grid_json,
+                    pathfinding_grid_json
+                ))
+
+            conn.commit()
+            conn.close()
+
+            messagebox.showinfo("DB 저장 완료", "격자 지도가 DB에 저장되었습니다.")
+
+        except Exception as e:
+            messagebox.showerror("DB 저장 오류", f"격자 지도를 DB에 저장하는 중 오류가 발생했습니다.\n{e}")
+        
+    def load_grid_from_db(self):
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+
+            cur.execute("SELECT rows, cols, raw_grid FROM grid_map WHERE id = 1")
+            row = cur.fetchone()
+
+            conn.close()
+
+            if row is None:
+                messagebox.showinfo("DB 불러오기", "DB에 저장된 격자 지도가 없습니다.")
+                return
+
+            rows, cols, raw_grid_json = row
+
+            self.rows = rows
+            self.cols = cols
+            self.grid = json.loads(raw_grid_json)
+
+            self.start = None
+            self.goal = None
+
+            for r in range(self.rows):
+                for c in range(self.cols):
+                    if self.grid[r][c] == 2:
+                        self.start = (r, c)
+                    elif self.grid[r][c] == 3:
+                        self.goal = (r, c)
 
             self.row_entry.delete(0, tk.END)
             self.row_entry.insert(0, str(self.rows))
@@ -315,7 +331,8 @@ class GridControlGUI:
             self.col_entry.insert(0, str(self.cols))
 
             self.draw_grid()
-            messagebox.showinfo("불러오기 완료", "격자 지도를 불러왔습니다.")
+
+            messagebox.showinfo("DB 불러오기 완료", "DB에서 격자 지도를 불러왔습니다.")
 
         except Exception as e:
-            messagebox.showerror("불러오기 오류", f"파일을 불러오는 중 오류가 발생했습니다.\n{e}")
+            messagebox.showerror("DB 불러오기 오류", f"DB에서 격자 지도를 불러오는 중 오류가 발생했습니다.\n{e}")
