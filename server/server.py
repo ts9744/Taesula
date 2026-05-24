@@ -360,7 +360,8 @@ def get_route_by_qr(qr_code: str):
         }
 
     path_list = [[x, y] for x, y in path]
-    current_path = path_list
+    command_path = path_to_commands(path)
+    current_path = command_path
 
     return {
         "message": "route found",
@@ -382,7 +383,8 @@ def get_route_by_qr(qr_code: str):
         },
         "start": [start[0], start[1]],
         "goal": [goal[0], goal[1]],
-        "path": path_list
+        "path": path_list,
+        "command_path": command_path
     }
 
 # =========================
@@ -500,4 +502,4 @@ def update_robot_status(current_x: int, current_y: int, status: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
