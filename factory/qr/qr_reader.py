@@ -2,7 +2,7 @@ import cv2
 from pyzbar.pyzbar import decode
 import requests
 
-SERVER_URL = "http://127.0.0.1:8000"
+SERVER_URL = "http://taesula.local:8000"
 
 def QRReaderGUI():
     cap = cv2.VideoCapture(0)
