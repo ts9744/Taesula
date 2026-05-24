@@ -4,7 +4,7 @@ import requests
 
 SERVER_URL = "http://127.0.0.1:8000"
 
-def read_qr_from_camera():
+def QRReaderGUI():
     cap = cv2.VideoCapture(0)
 
     if not cap.isOpened():
@@ -49,7 +49,3 @@ def read_qr_from_camera():
 
     cap.release()
     cv2.destroyAllWindows()
-
-
-if __name__ == "__main__":
-    read_qr_from_camera()

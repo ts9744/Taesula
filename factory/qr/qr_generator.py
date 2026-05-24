@@ -5,8 +5,9 @@ import qrcode
 
 
 class QRGeneratorApp:
-    def __init__(self, root):
+    def __init__(self, root, back_callback=None):
         self.root = root
+        self.back_callback = back_callback
         self.root.title("QR Generator")
         self.root.geometry("420x520")
         self.root.resizable(False, False)
@@ -23,6 +24,15 @@ class QRGeneratorApp:
             font=("Arial", 18, "bold")
         )
         title_label.pack(pady=15)
+
+        back_frame = tk.Frame(self.root)
+        back_frame.pack(fill="x", padx=10, pady=(10,0))
+
+        tk.Button(
+            back_frame,
+            text="뒤로가기",
+            command=self.go_back
+        ).pack(side="left")
 
         guide_label = tk.Label(
             self.root,
@@ -117,9 +127,13 @@ class QRGeneratorApp:
 
         self.qr_image.save(file_path)
         messagebox.showinfo("저장 완료", "QR 코드 이미지가 저장되었습니다.")
+    
+    def go_back(self):
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        
+        self.root.title("Smart Logistics Robot")
+        self.root.geometry("350x250")
 
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = QRGeneratorApp(root)
-    root.mainloop()
+        if self.back_callback:
+            self.back_callback()
