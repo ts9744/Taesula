@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import messagebox
 from gridMap import GridControlGUI
 from itemScan import ItemScanGUI
-
+from qr.qr_generator import QRGeneratorApp
 
 class FactoryGUI:
     def __init__(self, root):
@@ -53,7 +53,9 @@ class FactoryGUI:
         ItemScanGUI(self.root, back_callback=self.create_widgets)
 
     def register_item(self):
-        messagebox.showinfo("물품 등록", "물품 등록 기능은 추후 연결 예정입니다.")
+        for widget in self.root.winfo_children():
+            widget.destroy()
+        QRGeneratorApp(self.root, back_callback=self.create_widgets)
 
     def create_grid(self):
         for widget in self.root.winfo_children():

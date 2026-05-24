@@ -12,7 +12,7 @@ except ImportError:
     Picamera2 = None
 
 
-SERVER_URL = "http://127.0.0.1:8000"
+SERVER_URL = "Taesula.local:8000"
 
 
 class ItemScanGUI:

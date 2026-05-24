@@ -7,10 +7,11 @@ import requests
 SERVER_URL = "http://192.168.0.28:8000"
 
 class QRGeneratorApp:
-    def __init__(self, root):
+    def __init__(self, root, back_callback=None):
         self.root = root
-        self.root.title("Item 등록 및 QR 생성")
-        self.root.geometry("460x570")
+        self.back_callback = back_callback
+        self.root.title("QR Generator")
+        self.root.geometry("420x520")
         self.root.resizable(False, False)
 
         self.qr_image = None
@@ -27,6 +28,15 @@ class QRGeneratorApp:
             font=("Arial", 18, "bold")
         )
         title_label.pack(pady=15)
+
+        back_frame = tk.Frame(self.root)
+        back_frame.pack(fill="x", padx=10, pady=(10,0))
+
+        tk.Button(
+            back_frame,
+            text="뒤로가기",
+            command=self.go_back
+        ).pack(side="left")
 
         guide_label = tk.Label(
             self.root,
@@ -228,6 +238,12 @@ class QRGeneratorApp:
         self.qr_preview = None
         self.preview_label.config(image="", text="QR 미리보기")
         self.status_label.config(text="입력값이 초기화되었습니다.", fg="gray")
+
+    def go_back(self):
+        if self.back_callback:
+            self.back_callback()
+        else:
+            self.root.destroy()
 
 
 if __name__ == "__main__":
