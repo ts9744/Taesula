@@ -44,6 +44,27 @@ def load_grid_from_db():
 current_command = "stop"
 current_path = []
 
+def path_to_commands(path):
+    commands = []
+
+    for i in range(1, len(path)):
+        prev_x, prev_y = path[i - 1]
+        curr_x, curr_y = path[i]
+
+        dx = curr_x - prev_x
+        dy = curr_y - prev_y
+
+        if dx == 1:
+            commands.append("forward")
+        elif dx == -1:
+            commands.append("backward")
+        elif dy == 1:
+            commands.append("right")
+        elif dy == -1:
+            commands.append("left")
+
+    commands.append("stop")
+    return commands
 
 class CommandRequest(BaseModel):
     direction: Literal["forward", "backward", "left", "right", "stop"]
