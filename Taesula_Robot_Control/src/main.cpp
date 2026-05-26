@@ -40,13 +40,16 @@ const bool AUTO_TEST_MODE = true;
 // 자동 주행 시작 전 대기 시간(ms)
 const unsigned long START_DELAY_MS = 3000;
 
+const unsigned long FORWARD_RUN_MS = 3000;
 // 초음파 센서 확인 간격(ms)
 const unsigned long SENSOR_CHECK_INTERVAL_MS = 200;
 
 // 자동 테스트 상태 변수
 bool autoStarted = false;
+bool autoFinished = false;
 bool autoStoppedByObstacle = false;
 unsigned long startTime = 0;
+unsigned long forwardStartTime = 0;
 unsigned long lastSensorCheckTime = 0;
 
 // 함수 선언
@@ -103,6 +106,7 @@ void setup() {
   if (AUTO_TEST_MODE) {
     Serial.println("AUTO TEST MODE = ON");
     Serial.println("Robot will move forward after 3 seconds.");
+    Serial.println("Robot will stop automatically after 3 seconds of movement.");
     Serial.println("Obstacle detected -> STOP");
   } else {
     Serial.println("AUTO TEST MODE = OFF");
@@ -123,9 +127,11 @@ void loop() {
 }
 
 // 자동 주행 테스트 함수
+// 자동 주행 테스트 함수
+// 전원 켜진 뒤 3초 대기 → 3초 전진 → 4바퀴 전체 정지
 void runAutoTestMode() {
-  // 장애물 감지 후에는 계속 정지 유지
-  if (autoStoppedByObstacle) {
+  // 자동 테스트가 끝났거나 장애물로 정지한 경우 계속 정지 유지
+  if (autoFinished || autoStoppedByObstacle) {
     stopMotor();
     return;
   }
@@ -139,24 +145,34 @@ void runAutoTestMode() {
 
     Serial.println("AUTO TEST START: FORWARD");
     moveForward();
+
     autoStarted = true;
+    forwardStartTime = millis();
     lastSensorCheckTime = millis();
   }
 
-  // 일정 간격마다 초음파 센서 확인
-  if (millis() - lastSensorCheckTime >= SENSOR_CHECK_INTERVAL_MS) {
+  // 3초 동안 전진 후 자동 정지
+  if (millis() - forwardStartTime >= FORWARD_RUN_MS) {
+    Serial.println("AUTO TEST FINISHED: STOP");
+    stopMotor();
+
+    autoFinished = true;
+    return;
+  }
+
+  // 전진 중 일정 간격마다 초음파 센서 확인
+  /*if (millis() - lastSensorCheckTime >= SENSOR_CHECK_INTERVAL_MS) {
     lastSensorCheckTime = millis();
 
     if (isObstacleDetected()) {
       Serial.println("Obstacle detected during auto test!");
       Serial.println("Robot Action: STOP");
       stopMotor();
+
       autoStoppedByObstacle = true;
       return;
     }
-
-    moveForward();
-  }
+  }*/
 }
 
 // 모터 하나 방향 제어 함수
