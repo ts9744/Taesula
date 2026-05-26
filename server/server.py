@@ -114,6 +114,24 @@ def get_status():
 def get_command():
     return {"direction": current_command}
 
+@app.get("/next-command")
+def get_next_command():
+    global current_command, current_path
+
+    if not current_path:
+        current_command = "stop"
+        return {
+            "direction": "stop",
+            "message": "path is empty",
+            "remaining_path": current_path
+        }
+
+    current_command = current_path.pop(0)
+
+    return {
+        "direction": current_command,
+        "remaining_path": current_path
+    }
 
 @app.post("/command")
 def set_command(command: CommandRequest):
