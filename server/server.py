@@ -8,7 +8,7 @@ from pathlib import Path
 import cv2
 from fastapi import HTTPException, Response
 from fastapi.responses import StreamingResponse
-from server.camera.camera import get_camera, generate_camera_stream
+from camera.camera import get_camera, generate_camera_stream
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
