@@ -5,6 +5,9 @@ import sqlite3
 import sys
 import json
 from pathlib import Path
+import cv2
+from fastapi import HTTPException
+from camera.getCamera import get_camera
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
@@ -477,6 +480,32 @@ def update_robot_status(current_x: int, current_y: int, status: str):
         "status": status
     }
 
+qr_detector = cv2.QRCodeDetector()
+
+
+@app.get("/camera/qr")
+def read_qr_from_camera():
+    try:
+        cam = get_camera()
+        frame = cam.capture_array()
+
+        qr_data, points, _ = qr_detector.detectAndDecode(frame)
+
+        if qr_data:
+            return {
+                "detected": True,
+                "qr_code": qr_data
+            }
+
+        return {
+            "detected": False,
+            "qr_code": None
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8001)

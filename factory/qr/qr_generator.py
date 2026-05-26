@@ -4,7 +4,7 @@ from PIL import ImageTk
 import qrcode
 import requests
 
-SERVER_URL = "http://192.168.0.28:8000"
+SERVER_URL = "http://taesula.local:8000"
 
 class QRGeneratorApp:
     def __init__(self, root, back_callback=None):
