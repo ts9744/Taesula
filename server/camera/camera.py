@@ -31,9 +31,6 @@ def generate_camera_stream():
     while True:
         frame = cam.capture_array()
 
-        # RGB → BGR 변환. OpenCV imencode는 BGR 기준
-        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-
         ret, buffer = cv2.imencode(".jpg", frame)
 
         if not ret:
