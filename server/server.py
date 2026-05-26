@@ -48,6 +48,27 @@ def load_grid_from_db():
 current_command = "stop"
 current_path = []
 
+def path_to_commands(path):
+    commands = []
+
+    for i in range(1, len(path)):
+        prev_x, prev_y = path[i - 1]
+        curr_x, curr_y = path[i]
+
+        dx = curr_x - prev_x
+        dy = curr_y - prev_y
+
+        if dx == 1:
+            commands.append("forward")
+        elif dx == -1:
+            commands.append("backward")
+        elif dy == 1:
+            commands.append("right")
+        elif dy == -1:
+            commands.append("left")
+
+    commands.append("stop")
+    return commands
 
 class CommandRequest(BaseModel):
     direction: Literal["forward", "backward", "left", "right", "stop"]
@@ -97,6 +118,24 @@ def get_status():
 def get_command():
     return {"direction": current_command}
 
+@app.get("/next-command")
+def get_next_command():
+    global current_command, current_path
+
+    if not current_path:
+        current_command = "stop"
+        return {
+            "direction": "stop",
+            "message": "path is empty",
+            "remaining_path": current_path
+        }
+
+    current_command = current_path.pop(0)
+
+    return {
+        "direction": current_command,
+        "remaining_path": current_path
+    }
 
 @app.post("/command")
 def set_command(command: CommandRequest):
@@ -343,7 +382,8 @@ def get_route_by_qr(qr_code: str):
         }
 
     path_list = [[x, y] for x, y in path]
-    current_path = path_list
+    command_path = path_to_commands(path)
+    current_path = command_path
 
     return {
         "message": "route found",
@@ -365,7 +405,8 @@ def get_route_by_qr(qr_code: str):
         },
         "start": [start[0], start[1]],
         "goal": [goal[0], goal[1]],
-        "path": path_list
+        "path": path_list,
+        "command_path": command_path
     }
 
 # =========================
