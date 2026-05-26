@@ -91,8 +91,8 @@ class QRGeneratorApp:
         self.preview_label = tk.Label(
             self.root,
             text="QR 미리보기",
-            width=300,
-            height=300,
+            width=240,
+            height=240,
             bg="white",
             relief="solid"
         )
@@ -227,7 +227,7 @@ class QRGeneratorApp:
             back_color="white"
         ).convert("RGB")
 
-        preview_image = self.qr_image.resize((280, 280))
+        preview_image = self.qr_image.resize((220, 220))
         self.qr_preview = ImageTk.PhotoImage(preview_image)
 
         self.preview_label.config(image=self.qr_preview, text="")
