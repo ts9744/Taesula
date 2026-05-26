@@ -5,6 +5,10 @@ import sqlite3
 import sys
 import json
 from pathlib import Path
+import cv2
+from fastapi import HTTPException, Response
+from fastapi.responses import StreamingResponse
+from camera.camera import get_camera, generate_camera_stream
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
@@ -517,6 +521,38 @@ def update_robot_status(current_x: int, current_y: int, status: str):
         "current_y": current_y,
         "status": status
     }
+
+qr_detector = cv2.QRCodeDetector()
+
+# 라즈베리파이의 카메라를 통해 사진을 찍어 인식하는 부분
+@app.get("/camera/qr")
+def read_qr_from_camera():
+    try:
+        cam = get_camera()
+        frame = cam.capture_array()
+
+        qr_data, points, _ = qr_detector.detectAndDecode(frame)
+
+        if qr_data:
+            return {
+                "detected": True,
+                "qr_code": qr_data
+            }
+
+        return {
+            "detected": False,
+            "qr_code": None
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/camera/stream")
+def camera_stream():
+    return StreamingResponse(
+        generate_camera_stream(),
+        media_type="multipart/x-mixed-replace; boundary=frame"
+    )
 
 if __name__ == "__main__":
     import uvicorn

@@ -221,3 +221,10 @@ Taesula_Robot_Control/.vscode/
 
 # Python virtual environment
 venv/
+
+# exe file
+factory/TaesulaClient.*
+factory/build/
+factory/dist/
+
+

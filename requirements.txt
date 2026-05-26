@@ -1,4 +1,8 @@
-fastapi
-uvicorn
-pydantic
-requests
+fastapi==0.136.1
+uvicorn==0.46.0
+pydantic==2.13.4
+requests==2.34.0
+opencv-python==4.13.0.92
+pyinstaller==6.20.0
+pillow==12.2.0
+qrcode==8.2
