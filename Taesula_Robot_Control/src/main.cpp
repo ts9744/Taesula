@@ -7,40 +7,23 @@ const int LED_PIN = 2;
 const int TRIG_PIN = 5;
 const int ECHO_PIN = 18;
 
-// ===============================
-// L298N #1: 앞바퀴 모터드라이버
-// OUT1/OUT2 -> 앞왼쪽 모터
-// OUT3/OUT4 -> 앞오른쪽 모터
-// ===============================
-const int FL_IN1 = 26;  // Front Left IN1
-const int FL_IN2 = 27;  // Front Left IN2
-
-const int FR_IN1 = 14;  // Front Right IN3
-const int FR_IN2 = 12;  // Front Right IN4
-
-// ===============================
-// L298N #2: 뒷바퀴 모터드라이버
-// OUT1/OUT2 -> 뒤왼쪽 모터
-// OUT3/OUT4 -> 뒤오른쪽 모터
-// ===============================
-const int RL_IN1 = 25;  // Rear Left IN1
-const int RL_IN2 = 33;  // Rear Left IN2
-
-const int RR_IN1 = 32;  // Rear Right IN3
-const int RR_IN2 = 13;  // Rear Right IN4
+// 한쪽 모터드라이버 제어 핀
+// L298N 기준: OUT1/OUT2에 연결된 모터를 IN1/IN2로 제어
+const int MOTOR_IN1 = 26;
+const int MOTOR_IN2 = 27;
 
 // 장애물 판단 기준 거리(cm)
 const int OBSTACLE_DISTANCE = 15;
 
 // 자동 바닥 주행 테스트 모드
-// true  = 전원 켜면 3초 뒤 자동 전진
-// false = 시리얼 명령 입력해야 움직임
+// true  = 노트북 시리얼 입력 없이 전원 켜면 자동 전진
+// false = 기존처럼 시리얼 명령 F/B/L/R/S 입력으로 제어
 const bool AUTO_TEST_MODE = true;
 
 // 자동 주행 시작 전 대기 시간(ms)
 const unsigned long START_DELAY_MS = 3000;
 
-// 초음파 센서 확인 간격(ms)
+// 초음파 센서 측정 간격(ms)
 const unsigned long SENSOR_CHECK_INTERVAL_MS = 200;
 
 // 자동 테스트 상태 변수
@@ -56,7 +39,6 @@ void turnLeft();
 void turnRight();
 void stopMotor();
 
-void setMotor(int in1, int in2, bool forward);
 void handleCommand(char command);
 void runAutoTestMode();
 
@@ -69,27 +51,18 @@ void setup() {
   Serial.begin(115200);
 
   pinMode(LED_PIN, OUTPUT);
-
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
 
-  // 앞바퀴 모터 핀 설정
-  pinMode(FL_IN1, OUTPUT);
-  pinMode(FL_IN2, OUTPUT);
-  pinMode(FR_IN1, OUTPUT);
-  pinMode(FR_IN2, OUTPUT);
-
-  // 뒷바퀴 모터 핀 설정
-  pinMode(RL_IN1, OUTPUT);
-  pinMode(RL_IN2, OUTPUT);
-  pinMode(RR_IN1, OUTPUT);
-  pinMode(RR_IN2, OUTPUT);
+  // 모터 제어 핀 설정
+  pinMode(MOTOR_IN1, OUTPUT);
+  pinMode(MOTOR_IN2, OUTPUT);
 
   stopMotor();
 
   startTime = millis();
 
-  Serial.println("ESP32 4-Wheel Robot Control Start");
+  Serial.println("ESP32 Robot Control + Standalone Auto Test Start");
   Serial.println("Command List:");
   Serial.println("F = Forward");
   Serial.println("B = Backward");
@@ -111,11 +84,12 @@ void setup() {
 }
 
 void loop() {
+  // 노트북 없이 바닥 주행 테스트
   if (AUTO_TEST_MODE) {
     runAutoTestMode();
   }
 
-  // 자동 모드여도 시리얼 명령은 디버깅용으로 받을 수 있게 유지
+  // 기존 시리얼 명령도 디버깅용으로 유지
   if (Serial.available() > 0) {
     char command = Serial.read();
     handleCommand(command);
@@ -155,88 +129,14 @@ void runAutoTestMode() {
       return;
     }
 
+    // 장애물이 없으면 계속 전진
     moveForward();
   }
 }
 
-// 모터 하나 방향 제어 함수
-void setMotor(int in1, int in2, bool forward) {
-  if (forward) {
-    digitalWrite(in1, HIGH);
-    digitalWrite(in2, LOW);
-  } else {
-    digitalWrite(in1, LOW);
-    digitalWrite(in2, HIGH);
-  }
-}
-
-// 전진
-void moveForward() {
-  Serial.println("Robot Action: FORWARD");
-  digitalWrite(LED_PIN, HIGH);
-
-  setMotor(FL_IN1, FL_IN2, true);
-  setMotor(FR_IN1, FR_IN2, true);
-  setMotor(RL_IN1, RL_IN2, true);
-  setMotor(RR_IN1, RR_IN2, true);
-}
-
-// 후진
-void moveBackward() {
-  Serial.println("Robot Action: BACKWARD");
-  digitalWrite(LED_PIN, HIGH);
-
-  setMotor(FL_IN1, FL_IN2, false);
-  setMotor(FR_IN1, FR_IN2, false);
-  setMotor(RL_IN1, RL_IN2, false);
-  setMotor(RR_IN1, RR_IN2, false);
-}
-
-// 좌회전
-// 왼쪽 바퀴 후진, 오른쪽 바퀴 전진
-void turnLeft() {
-  Serial.println("Robot Action: LEFT");
-  digitalWrite(LED_PIN, HIGH);
-
-  setMotor(FL_IN1, FL_IN2, false);
-  setMotor(RL_IN1, RL_IN2, false);
-
-  setMotor(FR_IN1, FR_IN2, true);
-  setMotor(RR_IN1, RR_IN2, true);
-}
-
-// 우회전
-// 왼쪽 바퀴 전진, 오른쪽 바퀴 후진
-void turnRight() {
-  Serial.println("Robot Action: RIGHT");
-  digitalWrite(LED_PIN, HIGH);
-
-  setMotor(FL_IN1, FL_IN2, true);
-  setMotor(RL_IN1, RL_IN2, true);
-
-  setMotor(FR_IN1, FR_IN2, false);
-  setMotor(RR_IN1, RR_IN2, false);
-}
-
-// 정지
-void stopMotor() {
-  digitalWrite(LED_PIN, LOW);
-
-  digitalWrite(FL_IN1, LOW);
-  digitalWrite(FL_IN2, LOW);
-
-  digitalWrite(FR_IN1, LOW);
-  digitalWrite(FR_IN2, LOW);
-
-  digitalWrite(RL_IN1, LOW);
-  digitalWrite(RL_IN2, LOW);
-
-  digitalWrite(RR_IN1, LOW);
-  digitalWrite(RR_IN2, LOW);
-}
-
 // 명령 처리 함수
 void handleCommand(char command) {
+  // 엔터, 줄바꿈, 공백 문자는 명령으로 처리하지 않음
   if (command == '\n' || command == '\r' || command == ' ') {
     return;
   }
@@ -244,7 +144,6 @@ void handleCommand(char command) {
   if (command == 'F' || command == 'f') {
     if (isObstacleDetected()) {
       Serial.println("Obstacle detected! Robot stopped.");
-      autoStoppedByObstacle = true;
       stopMotor();
     } else {
       autoStoppedByObstacle = false;
@@ -266,7 +165,6 @@ void handleCommand(char command) {
   else if (command == 'S' || command == 's') {
     autoStoppedByObstacle = true;
     stopMotor();
-    Serial.println("Robot Action: STOP");
   }
   else if (command == 'D' || command == 'd') {
     getDistanceCm();
@@ -335,4 +233,51 @@ void testObstacleDetection(long testDistance) {
   } else {
     Serial.println("No obstacle in test data.");
   }
+}
+
+// 전진
+void moveForward() {
+  Serial.println("Robot Action: FORWARD");
+  digitalWrite(LED_PIN, HIGH);
+
+  digitalWrite(MOTOR_IN1, HIGH);
+  digitalWrite(MOTOR_IN2, LOW);
+}
+
+// 후진
+void moveBackward() {
+  Serial.println("Robot Action: BACKWARD");
+  digitalWrite(LED_PIN, HIGH);
+
+  digitalWrite(MOTOR_IN1, LOW);
+  digitalWrite(MOTOR_IN2, HIGH);
+}
+
+// 좌회전
+// 한쪽 모터만 연결한 테스트 단계에서는 전진과 동일하게 처리
+void turnLeft() {
+  Serial.println("Robot Action: LEFT");
+  digitalWrite(LED_PIN, HIGH);
+
+  digitalWrite(MOTOR_IN1, HIGH);
+  digitalWrite(MOTOR_IN2, LOW);
+}
+
+// 우회전
+// 한쪽 모터만 연결한 테스트 단계에서는 후진과 동일하게 처리
+void turnRight() {
+  Serial.println("Robot Action: RIGHT");
+  digitalWrite(LED_PIN, HIGH);
+
+  digitalWrite(MOTOR_IN1, LOW);
+  digitalWrite(MOTOR_IN2, HIGH);
+}
+
+// 정지
+void stopMotor() {
+  Serial.println("Robot Action: STOP");
+  digitalWrite(LED_PIN, LOW);
+
+  digitalWrite(MOTOR_IN1, LOW);
+  digitalWrite(MOTOR_IN2, LOW);
 }
