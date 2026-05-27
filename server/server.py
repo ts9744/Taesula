@@ -190,18 +190,41 @@ def set_path(path_data: PathRequest):
 # CREATE
 @app.post("/items")
 def create_item(name: str, qr_code: str, destination_id: int):
-    conn = get_db()
-    cursor = conn.cursor()
+    conn = None
 
-    cursor.execute(
-        "INSERT INTO items (name, qr_code, destination_id) VALUES (?, ?, ?)",
-        (name, qr_code, destination_id)
-    )
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
 
-    conn.commit()
-    conn.close()
+        cursor.execute(
+            "INSERT INTO items (name, qr_code, destination_id) VALUES (?, ?, ?)",
+            (name, qr_code, destination_id)
+        )
 
-    return {"message": "item created"}
+        conn.commit()
+
+        return {
+            "message": "item created",
+            "name": name,
+            "qr_code": qr_code,
+            "destination_id": destination_id
+        }
+
+    except sqlite3.IntegrityError:
+        raise HTTPException(
+            status_code=400,
+            detail="중복된 item이 존재합니다."
+        )
+
+    except sqlite3.OperationalError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"DB 처리 중 오류가 발생했습니다: {e}"
+        )
+
+    finally:
+        if conn:
+            conn.close()
 
 # READ ALL
 @app.get("/items")
