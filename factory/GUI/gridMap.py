@@ -1,8 +1,13 @@
 import tkinter as tk
-from tkinter import messagebox, filedialog
+from tkinter import messagebox
 import requests
+from pathlib import Path
+import sys
 
-SERVER_URL = "http://taesula.local:8000" 
+BASE_DIR = Path(__file__).resolve().parents[1]
+sys.path.append(str(BASE_DIR))
+
+from config import SERVER_URL
 
 class GridControlGUI:
     def __init__(self, root, back_callback=None):
