@@ -4,6 +4,9 @@ import json
 import sqlite3
 import os
 import sys
+import requests
+
+SERVER_URL = "http://taesula.local:8000" 
 
 class GridControlGUI:
     def __init__(self, root, back_callback=None):
@@ -243,67 +246,36 @@ class GridControlGUI:
         return os.path.join(os.path.join(base_dir, "..", "SIDA_system.db"))
 
     def save_grid_to_db(self):
-        raw_grid_json = json.dumps(self.grid, ensure_ascii=False)
-        pathfinding_grid_json = json.dumps(self.get_pathfinding_grid(), ensure_ascii=False)
+        data = {
+            "rows": self.rows,
+            "cols": self.cols,
+            "raw_grid": self.grid,
+            "pathfinding_grid": self.get_pathfinding_grid()
+        }
 
         try:
-            conn = sqlite3.connect(self.db_path)
-            cur = conn.cursor()
+            response = requests.post(
+                f"{SERVER_URL}/grid-map",
+                json=data,
+                timeout=5
+            )
 
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS grid_map (
-                    id INTEGER PRIMARY KEY,
-                    rows INTEGER NOT NULL,
-                    cols INTEGER NOT NULL,
-                    raw_grid TEXT NOT NULL,
-                    pathfinding_grid TEXT NOT NULL,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            if response.status_code == 200:
+                messagebox.showinfo(
+                    "DB 저장 완료",
+                    "격자 지도가 서버 DB에 저장되었습니다."
                 )
-            """)
-
-            cur.execute("SELECT id FROM grid_map WHERE id = 1")
-            row = cur.fetchone()
-
-            if row:
-                cur.execute("""
-                    UPDATE grid_map
-                    SET rows = ?,
-                        cols = ?,
-                        raw_grid = ?,
-                        pathfinding_grid = ?,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = 1
-                """, (
-                    self.rows,
-                    self.cols,
-                    raw_grid_json,
-                    pathfinding_grid_json
-                ))
             else:
-                cur.execute("""
-                    INSERT INTO grid_map (
-                        id,
-                        rows,
-                        cols,
-                        raw_grid,
-                        pathfinding_grid
-                    )
-                    VALUES (?, ?, ?, ?, ?)
-                """, (
-                    1,
-                    self.rows,
-                    self.cols,
-                    raw_grid_json,
-                    pathfinding_grid_json
-                ))
+                messagebox.showerror(
+                    "DB 저장 오류",
+                    f"서버 응답 오류\n상태 코드: {response.status_code}\n{response.text}"
+                )
 
-            conn.commit()
-            conn.close()
-
-            messagebox.showinfo("DB 저장 완료", "격자 지도가 DB에 저장되었습니다.")
-
-        except Exception as e:
-            messagebox.showerror("DB 저장 오류", f"격자 지도를 DB에 저장하는 중 오류가 발생했습니다.\n{e}")
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror(
+                "서버 연결 오류",
+                f"라즈베리파이 서버에 연결할 수 없습니다.\n{e}"
+            )
         
     def load_grid_from_db(self):
         try:
