@@ -1,14 +1,18 @@
 from typing import Literal
-from fastapi import FastAPI
-from pydantic import BaseModel
-import sqlite3
+from pathlib import Path
 import sys
 import json
-from pathlib import Path
+import sqlite3
+
 import cv2
+from fastapi import FastAPI
 from fastapi import HTTPException, Response
 from fastapi.responses import StreamingResponse
-from camera.camera import get_camera, generate_camera_stream
+from pydantic import BaseModel
+
+# =========================
+# CONFIG
+# =========================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
@@ -16,6 +20,11 @@ sys.path.append(str(BASE_DIR))
 DB_PATH = BASE_DIR / "SIDA_system.db"
 
 from algorithm.astar import a_star
+from camera.camera import get_camera, generate_camera_stream
+
+# =========================
+# FASTAPI APP
+# =========================
 
 app = FastAPI(
     title="Robot Communication API",
@@ -23,7 +32,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# DB 연결 함수
+# =========================
+# DATABASE UTILS
+# =========================
+
 def get_db():
     return sqlite3.connect(DB_PATH)
 
@@ -44,6 +56,10 @@ def load_grid_from_db():
         return None
 
     return json.loads(row[0])
+
+# =========================
+# ROBOT COMMAND STATE & PATH UTILS
+# =========================
 
 current_command = "stop"
 current_path = []
@@ -70,6 +86,10 @@ def path_to_commands(path):
     commands.append("stop")
     return commands
 
+# =========================
+# REQUEST MODELS
+# =========================
+
 class CommandRequest(BaseModel):
     direction: Literal["forward", "backward", "left", "right", "stop"]
 
@@ -82,7 +102,10 @@ class GridMapRequest(BaseModel):
     cols: int
     raw_grid: list[list[int]]
     pathfinding_grid: list[list[int]]
-
+      
+# =========================
+# BASIC STATUS & COMMAND API
+# =========================
 
 @app.get("/")
 def root():
@@ -167,7 +190,7 @@ def set_path(path_data: PathRequest):
     }
 
 # =========================
-# ITEMS CRUD
+# ITEMS API
 # =========================
 
 # CREATE
@@ -283,7 +306,7 @@ def delete_item(qr_code: str):
     return {"message": "deleted"}
 
 # =========================
-# ROUTE SEARCH
+# ROUTE API
 # =========================
 
 @app.get("/route/{qr_code}")
@@ -293,6 +316,7 @@ def get_route_by_qr(qr_code: str):
     conn = get_db()
     cursor = conn.cursor()
 
+    # 1. QR 코드 기준으로 item 정보와 목적지 좌표 조회
     cursor.execute("""
         SELECT
             items.id,
@@ -314,6 +338,7 @@ def get_route_by_qr(qr_code: str):
         conn.close()
         return {"message": "item not found"}
 
+    # 2. DB에 저장된 로봇 현재 위치와 상태 조회
     cursor.execute("""
         SELECT current_x, current_y, status
         FROM robot_status
@@ -326,6 +351,7 @@ def get_route_by_qr(qr_code: str):
     if not robot_row:
         return {"message": "robot status not found"}
 
+    # 3. grid_map 테이블에서 A*에 사용할 pathfinding_grid 조회
     grid = load_grid_from_db()
 
     if grid is None:
@@ -334,6 +360,7 @@ def get_route_by_qr(qr_code: str):
             "detail": "grid_map 테이블에 pathfinding_grid 데이터 필요"
         }
 
+    # 4. 조회한 DB 결과를 경로 탐색에 사용할 값으로 분리
     item_id = item_row[0]
     item_name = item_row[1]
     item_qr_code = item_row[2]
@@ -352,6 +379,7 @@ def get_route_by_qr(qr_code: str):
     rows = len(grid)
     cols = len(grid[0])
 
+    # 5. 시작 좌표와 목적지 좌표가 grid 범위 안에 있는지 확인
     if not (0 <= start[0] < rows and 0 <= start[1] < cols):
         return {
             "message": "start position is out of grid range",
@@ -364,6 +392,7 @@ def get_route_by_qr(qr_code: str):
             "goal": [goal[0], goal[1]]
         }
 
+    # 6. 시작점과 목적지가 장애물 칸인지 확인
     if grid[start[0]][start[1]] == 1:
         return {
             "message": "start position is obstacle",
@@ -376,6 +405,7 @@ def get_route_by_qr(qr_code: str):
             "goal": [goal[0], goal[1]]
         }
 
+    # 7. A* 알고리즘으로 현재 위치에서 목적지까지의 좌표 경로 탐색
     path = a_star(grid, start, goal)
 
     if path is None:
@@ -387,10 +417,14 @@ def get_route_by_qr(qr_code: str):
             "goal": [goal[0], goal[1]]
         }
 
+    # 8. 좌표 경로를 JSON 응답용 리스트와 ESP32 명령 리스트로 변환
     path_list = [[x, y] for x, y in path]
     command_path = path_to_commands(path)
+
+    # 9. /next-command API에서 순차적으로 가져갈 수 있도록 명령 경로 저장
     current_path = command_path
 
+    # 10. item, robot, destination, path 정보를 응답
     return {
         "message": "route found",
         "qr_code": item_qr_code,
@@ -416,7 +450,7 @@ def get_route_by_qr(qr_code: str):
     }
 
 # =========================
-# LOCATIONS
+# LOCATIONS API
 # =========================
 
 @app.post("/grid-map")
@@ -560,7 +594,7 @@ def get_locations():
     ]
 
 # =========================
-# STATUS MANAGEMENT
+# ITEM STATUS API
 # =========================
 
 @app.put("/items/{qr_code}/status")
@@ -582,6 +616,9 @@ def update_item_status(qr_code: str, status: str):
         "status": status
     }
 
+# =========================
+# ROBOT STATUS API
+# =========================
 
 @app.get("/robot/status")
 def get_robot_status():
@@ -633,6 +670,11 @@ def update_robot_status(current_x: int, current_y: int, status: str):
         "status": status
     }
 
+
+# =========================
+# CAMERA API
+# =========================
+
 qr_detector = cv2.QRCodeDetector()
 
 # 라즈베리파이의 카메라를 통해 사진을 찍어 인식하는 부분
@@ -664,6 +706,10 @@ def camera_stream():
         generate_camera_stream(),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
+
+# =========================
+# SERVER RUNNER
+# =========================
 
 if __name__ == "__main__":
     import uvicorn
