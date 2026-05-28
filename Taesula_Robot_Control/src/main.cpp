@@ -37,6 +37,11 @@ const int OBSTACLE_DISTANCE = 15;
 // false = 시리얼 명령 입력해야 움직임
 const bool AUTO_TEST_MODE = true;
 
+// 자동 테스트 종류
+// "FORWARD"  = 3초 대기 후 3초 전진 후 정지
+// "BACKWARD" = 3초 대기 후 3초 후진 후 정지
+const String AUTO_TEST_TYPE = "BACKWARD";
+
 // 자동 주행 시작 전 대기 시간(ms)
 const unsigned long START_DELAY_MS = 3000;
 
@@ -105,9 +110,10 @@ void setup() {
 
   if (AUTO_TEST_MODE) {
     Serial.println("AUTO TEST MODE = ON");
-    Serial.println("Robot will move forward after 3 seconds.");
+    Serial.print("AUTO TEST TYPE = ");
+    Serial.println(AUTO_TEST_TYPE);
+    Serial.println("Robot will start after 3 seconds.");
     Serial.println("Robot will stop automatically after 3 seconds of movement.");
-    Serial.println("Obstacle detected -> STOP");
   } else {
     Serial.println("AUTO TEST MODE = OFF");
     Serial.println("Use serial commands to control robot.");
@@ -127,8 +133,7 @@ void loop() {
 }
 
 // 자동 주행 테스트 함수
-// 자동 주행 테스트 함수
-// 전원 켜진 뒤 3초 대기 → 3초 전진 → 4바퀴 전체 정지
+// 전원 켜진 뒤 3초 대기 → 선택된 방향으로 3초 이동 → 4바퀴 전체 정지
 void runAutoTestMode() {
   // 자동 테스트가 끝났거나 장애물로 정지한 경우 계속 정지 유지
   if (autoFinished || autoStoppedByObstacle) {
@@ -143,15 +148,28 @@ void runAutoTestMode() {
       return;
     }
 
-    Serial.println("AUTO TEST START: FORWARD");
-    moveForward();
+    Serial.print("AUTO TEST START: ");
+    Serial.println(AUTO_TEST_TYPE);
+
+    if (AUTO_TEST_TYPE == "FORWARD") {
+      moveForward();
+    }
+    else if (AUTO_TEST_TYPE == "BACKWARD") {
+      moveBackward();
+    }
+    else {
+      Serial.println("Invalid AUTO_TEST_TYPE. Robot stopped.");
+      stopMotor();
+      autoFinished = true;
+      return;
+    }
 
     autoStarted = true;
     forwardStartTime = millis();
     lastSensorCheckTime = millis();
   }
 
-  // 3초 동안 전진 후 자동 정지
+  // 지정 시간 동안 이동 후 자동 정지
   if (millis() - forwardStartTime >= FORWARD_RUN_MS) {
     Serial.println("AUTO TEST FINISHED: STOP");
     stopMotor();
@@ -160,8 +178,9 @@ void runAutoTestMode() {
     return;
   }
 
-  // 전진 중 일정 간격마다 초음파 센서 확인
-  /*if (millis() - lastSensorCheckTime >= SENSOR_CHECK_INTERVAL_MS) {
+  // 초음파 센서 미연결 상태에서는 아래 코드를 주석 처리한 상태로 유지
+  /*
+  if (millis() - lastSensorCheckTime >= SENSOR_CHECK_INTERVAL_MS) {
     lastSensorCheckTime = millis();
 
     if (isObstacleDetected()) {
@@ -172,7 +191,8 @@ void runAutoTestMode() {
       autoStoppedByObstacle = true;
       return;
     }
-  }*/
+  }
+  */
 }
 
 // 모터 하나 방향 제어 함수
