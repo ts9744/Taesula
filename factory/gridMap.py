@@ -145,7 +145,7 @@ class GridControlGUI:
                 self.canvas.create_text(
                     x1 + self.cell_size / 2,
                     y1 + self.cell_size / 2,
-                    text=f"{r},{c}",
+                    text=f"{r+1},{c+1}",
                     font=("Arial", 8)
                 )
 
