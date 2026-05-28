@@ -203,7 +203,7 @@ class ItemScanGUI:
 
     def create_route_by_qr(self, qr_code):
         try:
-            response = requests.get(f"{SERVER_URL}/routes/{qr_code}", timeout=3)
+            response = requests.get(f"{SERVER_URL}/route/{qr_code}", timeout=3)
 
             if response.status_code == 200:
                 return response.json()
