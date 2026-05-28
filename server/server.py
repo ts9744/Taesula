@@ -339,8 +339,8 @@ def get_route_by_qr(qr_code: str):
     item_qr_code = item_row[2]
     item_status = item_row[3]
     zone_name = item_row[4]
-    goal_x = item_row[5]
-    goal_y = item_row[6]
+    goal_x = item_row[5] - 1
+    goal_y = item_row[6] - 1
 
     current_x = robot_row[0]
     current_y = robot_row[1]
