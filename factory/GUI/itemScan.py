@@ -1,14 +1,16 @@
 import tkinter as tk
-from tkinter import messagebox
 import threading
 import time
-import cv2
 import requests
 from PIL import Image, ImageTk
 import io
+from pathlib import Path
+import sys
 
+BASE_DIR = Path(__file__).resolve().parents[1]
+sys.path.append(str(BASE_DIR))
 
-SERVER_URL = "http://taesula.local:8000"
+from config import SERVER_URL
 
 class ItemScanGUI:
     def __init__(self, root, back_callback=None):
