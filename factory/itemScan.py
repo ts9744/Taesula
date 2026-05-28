@@ -187,8 +187,8 @@ class ItemScanGUI:
                     now = time.time()
 
                     if qr_code != self.last_qr or now - self.last_detect_time > 3:
-                        item_info = self.get_item_info(qr_code)
-                        self.show_result(qr_code, item_info)
+                        route_info = self.create_route_by_qr(qr_code)
+                        self.show_result(qr_code, route_info)
 
                         self.last_qr = qr_code
                         self.last_detect_time = now
@@ -199,33 +199,77 @@ class ItemScanGUI:
                 self.show_message(f"라즈베리파이 서버 연결 실패\n{e}")
                 time.sleep(1.0)
 
-    def get_item_info(self, qr_code):
+    def create_route_by_qr(self, qr_code):
         try:
-            response = requests.get(f"{SERVER_URL}/items/{qr_code}", timeout=3)
+            response = requests.get(f"{SERVER_URL}/routes/{qr_code}", timeout=3)
 
             if response.status_code == 200:
                 return response.json()
 
-            return None
+            return {
+                "message" : "route api error",
+                "status_code": response.status_code
+            }
 
-        except requests.exceptions.RequestException:
-            return None
+        except requests.exceptions.RequestException as e:
+            return {
+                "message" : "server connection error",
+                "detail" : str(e)
+            }
 
-    def show_result(self, qr_code, item_info):
+    def show_result(self, qr_code, route_info):
         def update_gui():
             self.result_text.delete("1.0", tk.END)
             self.result_text.insert(tk.END, f"인식된 QR 코드: {qr_code}\n\n")
 
-            if item_info is None:
+            if route_info is None:
                 self.result_text.insert(
                     tk.END,
-                    "DB에서 해당 QR 코드의 물품 정보를 찾지 못했습니다.\n"
+                    "경로 생성 요청에 실패했습니다.\n"
                 )
-            else:
-                self.result_text.insert(tk.END, "물품 정보 조회 성공\n\n")
-                self.result_text.insert(tk.END, f"{item_info}\n")
+                self.status_label.config(text="상태: 경로 생성 실패")
+                return
 
-            self.status_label.config(text="상태: QR 인식 성공")
+            if route_info.get("message") != "route found":
+                self.result_text.insert(tk.END, "경로 생성 실패\n\n")
+                self.result_text.insert(tk.END, f"응답 메시지: {route_info.get('message')}\n")
+
+                if "detail" in route_info:
+                    self.result_text.insert(tk.END, f"상세 정보: {route_info.get('detail')}\n")
+
+                self.status_label.config(text="상태: 경로 생성 실패")
+                return
+
+            item = route_info.get("item", {})
+            robot = route_info.get("robot", {})
+            destination = route_info.get("destination", {})
+            path = route_info.get("path", [])
+            command_path = route_info.get("command_path", [])
+
+            self.result_text.insert(tk.END, "경로 생성 성공\n\n")
+            self.result_text.insert(tk.END, f"물품명: {item.get('name')}\n")
+            self.result_text.insert(tk.END, f"물품 상태: {item.get('status')}\n\n")
+
+            self.result_text.insert(
+                tk.END,
+                f"현재 로봇 위치: ({robot.get('current_x')}, {robot.get('current_y')})\n"
+            )
+
+            self.result_text.insert(
+                tk.END,
+                f"목적지: {destination.get('zone_name')} "
+                f"({destination.get('x')}, {destination.get('y')})\n\n"
+            )
+
+            self.result_text.insert(tk.END, f"좌표 경로 개수: {len(path)}개\n")
+            self.result_text.insert(tk.END, f"명령 개수: {len(command_path)}개\n")
+            self.result_text.insert(tk.END, f"명령 경로: {command_path}\n\n")
+            self.result_text.insert(
+                tk.END,
+                "ESP32가 /next-command API를 호출하면 위 명령을 순서대로 받아갑니다.\n"
+            )
+
+            self.status_label.config(text="상태: 경로 생성 완료")
 
         self.root.after(0, update_gui)
 
