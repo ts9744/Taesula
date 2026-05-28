@@ -1,9 +1,5 @@
 import tkinter as tk
 from tkinter import messagebox, filedialog
-import json
-import sqlite3
-import os
-import sys
 import requests
 
 SERVER_URL = "http://taesula.local:8000" 
@@ -23,8 +19,6 @@ class GridControlGUI:
         self.start = None
         self.goal = None
         self.grid = []
-
-        self.db_path = self.get_db_path()
 
         self.colors = {
             0: "white",        # 이동 가능
@@ -234,16 +228,6 @@ class GridControlGUI:
             path_grid.append(row_data)
 
         return path_grid
-    
-    def get_db_path(self):
-        if getattr(sys, 'frozen', False):
-            # exe로 실행될 때 기준
-            base_dir = os.path.dirname(sys.executable)
-        else:
-            # python gridMap.py / client.py로 실행될 때 기준
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-
-        return os.path.join(os.path.join(base_dir, "..", "SIDA_system.db"))
 
     def save_grid_to_db(self):
         data = {
@@ -279,23 +263,30 @@ class GridControlGUI:
         
     def load_grid_from_db(self):
         try:
-            conn = sqlite3.connect(self.db_path)
-            cur = conn.cursor()
+            response = requests.get(
+                f"{SERVER_URL}/grid-map",
+                timeout=5
+            )
 
-            cur.execute("SELECT rows, cols, raw_grid FROM grid_map WHERE id = 1")
-            row = cur.fetchone()
-
-            conn.close()
-
-            if row is None:
-                messagebox.showinfo("DB 불러오기", "DB에 저장된 격자 지도가 없습니다.")
+            if response.status_code != 200:
+                messagebox.showerror(
+                    "DB 불러오기 오류",
+                    f"서버 응답 오류\n상태 코드: {response.status_code}\n{response.text}"
+                )
                 return
 
-            rows, cols, raw_grid_json = row
+            data = response.json()
 
-            self.rows = rows
-            self.cols = cols
-            self.grid = json.loads(raw_grid_json)
+            if data.get("message") == "grid map not found":
+                messagebox.showinfo(
+                    "DB 불러오기",
+                    "DB에 저장된 격자 지도가 없습니다."
+                )
+                return
+
+            self.rows = data["rows"]
+            self.cols = data["cols"]
+            self.grid = data["raw_grid"]
 
             self.start = None
             self.goal = None
@@ -315,7 +306,19 @@ class GridControlGUI:
 
             self.draw_grid()
 
-            messagebox.showinfo("DB 불러오기 완료", "DB에서 격자 지도를 불러왔습니다.")
+            messagebox.showinfo(
+                "DB 불러오기 완료",
+                "서버 DB에서 격자 지도를 불러왔습니다."
+            )
+
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror(
+                "서버 연결 오류",
+                f"라즈베리파이 서버에 연결할 수 없습니다.\n{e}"
+            )
 
         except Exception as e:
-            messagebox.showerror("DB 불러오기 오류", f"DB에서 격자 지도를 불러오는 중 오류가 발생했습니다.\n{e}")
+            messagebox.showerror(
+                "DB 불러오기 오류",
+                f"격자 지도를 불러오는 중 오류가 발생했습니다.\n{e}"
+            )
