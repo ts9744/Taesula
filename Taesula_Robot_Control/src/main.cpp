@@ -40,12 +40,12 @@ const bool AUTO_TEST_MODE = true;
 // 자동 테스트 종류
 // "FORWARD"  = 3초 대기 후 3초 전진 후 정지
 // "BACKWARD" = 3초 대기 후 3초 후진 후 정지
-const String AUTO_TEST_TYPE = "BACKWARD";
 
+const String AUTO_TEST_TYPE = "LEFT";
 // 자동 주행 시작 전 대기 시간(ms)
 const unsigned long START_DELAY_MS = 3000;
-
-const unsigned long FORWARD_RUN_MS = 3000;
+const unsigned long FORWARD_RUN_MS = 1000;
+const unsigned long TURN_RUN_MS = 1000;
 // 초음파 센서 확인 간격(ms)
 const unsigned long SENSOR_CHECK_INTERVAL_MS = 200;
 
@@ -63,11 +63,11 @@ void moveBackward();
 void turnLeft();
 void turnRight();
 void stopMotor();
-
+void stopMotorPair(int in1, int in2);
 void setMotor(int in1, int in2, bool forward);
 void handleCommand(char command);
 void runAutoTestMode();
-
+void runForwardLeftStopTest();
 long getDistanceCm();
 bool isObstacleDetected();
 bool isObstacleByDistance(long distance);
@@ -132,6 +132,26 @@ void loop() {
   }
 }
 
+void runForwardLeftStopTest() {
+  Serial.println("AUTO TEST START: FORWARD -> LEFT -> STOP");
+
+  // 1초 전진
+  Serial.println("AUTO TEST STEP 1: FORWARD");
+  moveForward();
+  delay(FORWARD_RUN_MS);
+
+  // 1초 좌회전
+  Serial.println("AUTO TEST STEP 2: LEFT");
+  turnLeft();
+  delay(TURN_RUN_MS);
+
+  // 정지
+  Serial.println("AUTO TEST STEP 3: STOP");
+  stopMotor();
+
+  Serial.println("AUTO TEST FINISHED");
+}
+
 // 자동 주행 테스트 함수
 // 전원 켜진 뒤 3초 대기 → 선택된 방향으로 3초 이동 → 4바퀴 전체 정지
 void runAutoTestMode() {
@@ -157,6 +177,12 @@ void runAutoTestMode() {
     else if (AUTO_TEST_TYPE == "BACKWARD") {
       moveBackward();
     }
+    else if (AUTO_TEST_TYPE == "LEFT") {
+      runForwardLeftStopTest();
+      autoFinished = true;
+      return;
+    }
+
     else {
       Serial.println("Invalid AUTO_TEST_TYPE. Robot stopped.");
       stopMotor();
@@ -234,11 +260,17 @@ void turnLeft() {
   Serial.println("Robot Action: LEFT");
   digitalWrite(LED_PIN, HIGH);
 
-  setMotor(FL_IN1, FL_IN2, false);
-  setMotor(RL_IN1, RL_IN2, false);
+  stopMotorPair(FL_IN1, FL_IN2);
+  stopMotorPair(RR_IN1, RR_IN2);
 
   setMotor(FR_IN1, FR_IN2, true);
-  setMotor(RR_IN1, RR_IN2, true);
+  setMotor(RL_IN1, RL_IN2, true);
+}
+
+// 왼쪽 앞/뒤 바퀴 정지
+void stopMotorPair(int in1, int in2) {
+  digitalWrite(in1, LOW);
+  digitalWrite(in2, LOW);
 }
 
 // 우회전
