@@ -33,6 +33,7 @@ class GridControlGUI:
 
         self.create_widgets()
         self.create_grid()
+        self.load_grid_from_db()
 
     def create_widgets(self):
         back_frame = tk.Frame(self.root)
@@ -77,6 +78,8 @@ class GridControlGUI:
 
         bottom_frame = tk.Frame(self.root)
         bottom_frame.pack(pady=5)
+        
+
 
         tk.Button(bottom_frame, text="DB 저장", command=self.save_grid_to_db).grid(row=0, column=0, padx=5)
         tk.Button(bottom_frame, text="DB 불러오기", command=self.load_grid_from_db).grid(row=0, column=1, padx=5)
