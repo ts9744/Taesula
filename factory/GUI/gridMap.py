@@ -88,7 +88,7 @@ class GridControlGUI:
             widget.destroy()
         
         self.root.title("Smart Logistics Robot")
-        self.root.geometry("350x250")
+        self.root.geometry("450x350")
 
         if self.back_callback:
             self.back_callback()
