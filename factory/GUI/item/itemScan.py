@@ -105,6 +105,9 @@ class ItemScanGUI:
             return
 
         self.camera_running = True
+        self.last_qr = None
+        self.last_detect_time = 0
+
         self.status_label.config(text="상태: 라즈베리파이 카메라 연결 중")
 
         video_thread = threading.Thread(target=self.video_read_loop)
@@ -179,27 +182,33 @@ class ItemScanGUI:
 
                 if response.status_code != 200:
                     self.show_message("QR 인식 API 호출 실패")
-                    time.sleep(1)
+                    time.sleep(1.5)
                     continue
 
                 data = response.json()
 
                 if data.get("detected"):
                     qr_code = data.get("qr_code")
-                    now = time.time()
 
-                    if qr_code != self.last_qr or now - self.last_detect_time > 3:
-                        route_info = self.create_route_by_qr(qr_code)
-                        self.show_result(qr_code, route_info)
+                    if qr_code == self.last_qr:
+                        time.sleep(1.5)
+                        continue
 
-                        self.last_qr = qr_code
-                        self.last_detect_time = now
+                    route_info = self.create_route_by_qr(qr_code)
+                    self.show_result(qr_code, route_info)
 
-                time.sleep(1.0)
+                    self.last_qr = qr_code
+                    self.last_detect_time = time.time()
+
+                    self.camera_running = False
+                    self.root.after(0, lambda: self.status_label.config(text="상태: QR 인식 완료"))
+                    break
+
+                time.sleep(1.5)
 
             except requests.exceptions.RequestException as e:
                 self.show_message(f"라즈베리파이 서버 연결 실패\n{e}")
-                time.sleep(1.0)
+                time.sleep(1.5)
 
     def create_route_by_qr(self, qr_code):
         try:
@@ -285,6 +294,7 @@ class ItemScanGUI:
 
     def stop_scan(self):
         self.camera_running = False
+        self.video_rendering = False
         self.status_label.config(text="상태: 인식 중지")
 
     def go_back(self):
@@ -294,7 +304,7 @@ class ItemScanGUI:
             widget.destroy()
 
         self.root.title("Smart Logistics Robot")
-        self.root.geometry("350x250")
+        self.root.geometry("450x350")
 
         if self.back_callback:
             self.back_callback()

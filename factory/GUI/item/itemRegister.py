@@ -11,7 +11,7 @@ sys.path.append(str(BASE_DIR))
 
 from config import SERVER_URL
 
-class QRGeneratorApp:
+class ItemRegisterGUI:
     def __init__(self, root, back_callback=None):
         self.root = root
         self.back_callback = back_callback
@@ -255,13 +255,7 @@ class QRGeneratorApp:
             widget.destroy()
 
         self.root.title("Smart Logistics Robot")
-        self.root.geometry("350x250")
+        self.root.geometry("450x350")
 
         if self.back_callback:
             self.back_callback()
-
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = QRGeneratorApp(root)
-    root.mainloop()
