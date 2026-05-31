@@ -93,15 +93,26 @@ class ItemRegisterGUI:
         )
         clear_button.grid(row=0, column=1, padx=5)
 
-        self.preview_label = tk.Label(
+        self.preview_frame = tk.Frame(
             self.root,
+            width=260,
+            height=260,
+            bg="white",
+            relief="solid",
+            bd=2
+        )
+        self.preview_frame.pack(pady=20)
+        self.preview_frame.pack_propagate(False)
+
+        self.preview_label = tk.Label(
+            self.preview_frame,
             text="QR 미리보기",
             width=240,
             height=240,
             bg="white",
-            relief="solid"
+            font = ("Arial", 11)
         )
-        self.preview_label.pack(pady=20)
+        self.preview_label.pack(expand=True)
 
         self.status_label = tk.Label(
             self.root,
@@ -242,6 +253,7 @@ class ItemRegisterGUI:
         self.qr_image = None
         self.qr_preview = None
         self.preview_label.config(image="", text="QR 미리보기")
+        self.preview_label.image = None
         self.status_label.config(text="입력값이 초기화되었습니다.", fg="gray")
 
     def go_back(self):
