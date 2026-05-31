@@ -1,15 +1,22 @@
+import sys
+from pathlib import Path
 import tkinter as tk
-from tkinter import messagebox
 from gridMap import GridControlGUI
 from item.itemScan import ItemScanGUI
 from item.itemRegister import ItemRegisterGUI
 from item.itemManage import ItemManageGUI
 
+BASE_DIR = Path(__file__).resolve().parents[1]
+sys.path.append(str(BASE_DIR))
+
+from config import MAIN_GUI_SIZE
+
+
 class FactoryGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Smart Logistics Robot")
-        self.root.geometry("450x350")
+        self.root.geometry(MAIN_GUI_SIZE)
 
         self.create_widgets()
 
@@ -17,7 +24,7 @@ class FactoryGUI:
         title_label = tk.Label(
             self.root,
             text="Taesula",
-            font=("Arial", 20, "bold")
+            font=("Arial", 40, "bold")
         )
         title_label.pack(pady=20)
 

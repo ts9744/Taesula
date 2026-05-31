@@ -7,7 +7,7 @@ import sys
 BASE_DIR = Path(__file__).resolve().parents[1]
 sys.path.append(str(BASE_DIR))
 
-from config import SERVER_URL
+from config import SERVER_URL, MAIN_GUI_SIZE
 
 class GridControlGUI:
     def __init__(self, root, back_callback=None):
@@ -89,7 +89,7 @@ class GridControlGUI:
             widget.destroy()
         
         self.root.title("Smart Logistics Robot")
-        self.root.geometry("450x350")
+        self.root.geometry(MAIN_GUI_SIZE)
 
         if self.back_callback:
             self.back_callback()
@@ -311,11 +311,6 @@ class GridControlGUI:
             self.col_entry.insert(0, str(self.cols))
 
             self.draw_grid()
-
-            messagebox.showinfo(
-                "DB 불러오기 완료",
-                "서버 DB에서 격자 지도를 불러왔습니다."
-            )
 
         except requests.exceptions.RequestException as e:
             messagebox.showerror(

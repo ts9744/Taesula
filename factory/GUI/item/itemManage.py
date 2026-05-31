@@ -7,7 +7,7 @@ import sys
 BASE_DIR = Path(__file__).resolve().parents[2]
 sys.path.append(str(BASE_DIR))
 
-from config import SERVER_URL
+from config import MAIN_GUI_SIZE, SERVER_URL
 
 
 class ItemManageGUI:
@@ -393,7 +393,7 @@ class ItemManageGUI:
             widget.destroy()
 
         self.root.title("Smart Logistics Robot")
-        self.root.geometry("450x350")
+        self.root.geometry(MAIN_GUI_SIZE)
 
         if self.back_callback:
             self.back_callback()
