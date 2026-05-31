@@ -235,18 +235,61 @@ def set_path(path_data: PathRequest):
 # CREATE
 @app.post("/items")
 def create_item(name: str, qr_code: str, destination_id: int):
-    conn = get_db()
-    cursor = conn.cursor()
+    conn = None
 
-    cursor.execute(
-        "INSERT INTO items (name, qr_code, destination_id) VALUES (?, ?, ?)",
-        (name, qr_code, destination_id)
-    )
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
 
-    conn.commit()
-    conn.close()
+        # 같은 이름의 item이 이미 있는지 확인
+        cursor.execute(
+            "SELECT id FROM items WHERE name=?",
+            (name,)
+        )
+        duplicate_name = cursor.fetchone()
 
-    return {"message": "item created"}
+        if duplicate_name:
+            raise HTTPException(
+                status_code=400,
+                detail="이미 같은 이름의 item이 존재합니다."
+            )
+
+        # 같은 qr_code의 item이 이미 있는지 확인
+        cursor.execute(
+            "SELECT id FROM items WHERE qr_code=?",
+            (qr_code,)
+        )
+        duplicate_qr = cursor.fetchone()
+
+        if duplicate_qr:
+            raise HTTPException(
+                status_code=400,
+                detail="이미 같은 qr_code를 가진 item이 존재합니다."
+            )
+
+        cursor.execute(
+            "INSERT INTO items (name, qr_code, destination_id) VALUES (?, ?, ?)",
+            (name, qr_code, destination_id)
+        )
+
+        conn.commit()
+
+        return {
+            "message": "item created",
+            "name": name,
+            "qr_code": qr_code,
+            "destination_id": destination_id
+        }
+
+    except sqlite3.OperationalError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"DB 처리 중 오류가 발생했습니다: {e}"
+        )
+
+    finally:
+        if conn:
+            conn.close()
 
 # READ ALL
 @app.get("/items")
@@ -315,18 +358,62 @@ def get_item(qr_code: str):
 # UPDATE
 @app.put("/items/{qr_code}")
 def update_item(qr_code: str, name: str, destination_id: int):
-    conn = get_db()
-    cursor = conn.cursor()
+    conn = None
 
-    cursor.execute(
-        "UPDATE items SET name=?, destination_id=? WHERE qr_code=?",
-        (name, destination_id, qr_code)
-    )
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
 
-    conn.commit()
-    conn.close()
+        # 수정 대상 item 존재 여부 확인
+        cursor.execute(
+            "SELECT id FROM items WHERE qr_code=?",
+            (qr_code,)
+        )
+        target_item = cursor.fetchone()
 
-    return {"message": "updated"}
+        if not target_item:
+            raise HTTPException(
+                status_code=404,
+                detail="수정할 item을 찾을 수 없습니다."
+            )
+
+        # 같은 이름을 가진 다른 item이 있는지 확인
+        cursor.execute(
+            "SELECT id FROM items WHERE name=? AND qr_code<>?",
+            (name, qr_code)
+        )
+        duplicate_item = cursor.fetchone()
+
+        if duplicate_item:
+            raise HTTPException(
+                status_code=400,
+                detail="이미 같은 이름의 item이 존재합니다."
+            )
+
+        # item 정보 수정
+        cursor.execute(
+            "UPDATE items SET name=?, destination_id=? WHERE qr_code=?",
+            (name, destination_id, qr_code)
+        )
+
+        conn.commit()
+
+        return {
+            "message": "item updated",
+            "qr_code": qr_code,
+            "name": name,
+            "destination_id": destination_id
+        }
+
+    except sqlite3.OperationalError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"DB 처리 중 오류가 발생했습니다: {e}"
+        )
+
+    finally:
+        if conn:
+            conn.close()
 
 # DELETE
 @app.delete("/items/{qr_code}")
@@ -638,6 +725,124 @@ def get_locations():
         }
         for row in rows
     ]
+
+# UPDATE
+@app.put("/locations/{location_id}")
+def update_location(location_id: int, zone_name: str, x: int, y: int):
+    conn = None
+
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+
+        # 수정 대상 location 존재 여부 확인
+        cursor.execute(
+            "SELECT id FROM locations WHERE id=?",
+            (location_id,)
+        )
+        target_location = cursor.fetchone()
+
+        if not target_location:
+            raise HTTPException(
+                status_code=404,
+                detail="수정할 location을 찾을 수 없습니다."
+            )
+
+        # 같은 이름을 가진 다른 location이 있는지 확인
+        cursor.execute(
+            "SELECT id FROM locations WHERE zone_name=? AND id<>?",
+            (zone_name, location_id)
+        )
+        duplicate_location = cursor.fetchone()
+
+        if duplicate_location:
+            raise HTTPException(
+                status_code=400,
+                detail="이미 같은 이름의 location이 존재합니다."
+            )
+
+        cursor.execute(
+            "UPDATE locations SET zone_name=?, x=?, y=? WHERE id=?",
+            (zone_name, x, y, location_id)
+        )
+
+        conn.commit()
+
+        return {
+            "message": "location updated",
+            "id": location_id,
+            "zone_name": zone_name,
+            "x": x,
+            "y": y
+        }
+
+    except sqlite3.OperationalError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"DB 처리 중 오류가 발생했습니다: {e}"
+        )
+
+    finally:
+        if conn:
+            conn.close()
+
+
+# DELETE
+@app.delete("/locations/{location_id}")
+def delete_location(location_id: int):
+    conn = None
+
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+
+        # 삭제 대상 location 존재 여부 확인
+        cursor.execute(
+            "SELECT id FROM locations WHERE id=?",
+            (location_id,)
+        )
+        target_location = cursor.fetchone()
+
+        if not target_location:
+            raise HTTPException(
+                status_code=404,
+                detail="삭제할 location을 찾을 수 없습니다."
+            )
+
+        # 해당 location을 목적지로 사용하는 item이 있는지 확인
+        cursor.execute(
+            "SELECT id FROM items WHERE destination_id=?",
+            (location_id,)
+        )
+        linked_item = cursor.fetchone()
+
+        if linked_item:
+            raise HTTPException(
+                status_code=400,
+                detail="해당 location을 목적지로 사용하는 item이 있어 삭제할 수 없습니다."
+            )
+
+        cursor.execute(
+            "DELETE FROM locations WHERE id=?",
+            (location_id,)
+        )
+
+        conn.commit()
+
+        return {
+            "message": "location deleted",
+            "id": location_id
+        }
+
+    except sqlite3.OperationalError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"DB 처리 중 오류가 발생했습니다: {e}"
+        )
+
+    finally:
+        if conn:
+            conn.close()
 
 # =========================
 # ITEM STATUS API
