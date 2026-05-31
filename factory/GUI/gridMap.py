@@ -116,7 +116,6 @@ class GridControlGUI:
 
     def clear_grid(self):
         self.create_grid()
-        self.output_text.delete("1.0", tk.END)
 
     def draw_grid(self):
         self.canvas.delete("all")
@@ -144,7 +143,7 @@ class GridControlGUI:
                 self.canvas.create_text(
                     x1 + self.cell_size / 2,
                     y1 + self.cell_size / 2,
-                    text=f"{r+1},{c+1}",
+                    text=f"{c+1},{r+1}",
                     font=("Arial", 8)
                 )
 
@@ -178,6 +177,20 @@ class GridControlGUI:
             self.grid[row][col] = 1
 
         elif self.mode == "start":
+            if self.grid[row][col] == 1:
+                messagebox.showwarning(
+                    "시작점 설정 불가",
+                    "장애물 칸에는 시작점을 설정할 수 없습니다."
+                )
+                return
+
+            if self.grid[row][col] == 3:
+                messagebox.showwarning(
+                    "시작점 설정 불가",
+                    "목적지로 등록된 칸에는 시작점을 설정할 수 없습니다."
+                )
+                return
+
             if self.start is not None:
                 old_r, old_c = self.start
                 self.grid[old_r][old_c] = 0
@@ -214,6 +227,16 @@ class GridControlGUI:
         return path_grid
 
     def save_grid_to_db(self):
+        if self.start is None:
+            messagebox.showwarning(
+                "시작점 없음",
+                "격자 지도를 저장하기 전에 시작점을 선택하세요."
+            )
+            return
+
+        if not self.save_robot_start_to_db():
+            return
+
         data = {
             "rows": self.rows,
             "cols": self.cols,
@@ -332,8 +355,8 @@ class GridControlGUI:
             return
 
         # 화면 표시 기준 좌표: 1부터 시작
-        x = row + 1
-        y = col + 1
+        x = col + 1
+        y = row + 1
 
         zone_name = self.ask_location_name(x, y)
 
@@ -406,8 +429,8 @@ class GridControlGUI:
 
                 # DB에는 1,1 기준으로 저장되어 있으므로
                 # 파이썬 grid 인덱스 기준으로 -1 변환
-                row = x - 1
-                col = y - 1
+                row = y - 1
+                col = x - 1
 
                 if row < 0 or row >= self.rows or col < 0 or col >= self.cols:
                     continue
@@ -499,3 +522,43 @@ class GridControlGUI:
         self.root.wait_window(dialog)
 
         return result["value"]
+
+    def save_robot_start_to_db(self):
+        if self.start is None:
+            messagebox.showwarning(
+                "시작점 없음",
+                "먼저 시작점 모드에서 로봇 시작 위치를 선택하세요."
+            )
+            return False
+
+        # self.start = (row, col)
+        # DB에는 x, y 기준으로 저장해야 하므로 x=col+1, y=row+1
+        current_x = self.start[1] + 1
+        current_y = self.start[0] + 1
+
+        try:
+            response = requests.put(
+                f"{SERVER_URL}/robot/status",
+                params={
+                    "current_x": current_x,
+                    "current_y": current_y,
+                    "status": "idle"
+                },
+                timeout=5
+            )
+
+            if response.status_code != 200:
+                messagebox.showerror(
+                    "시작점 저장 오류",
+                    f"서버 응답 오류\n상태 코드: {response.status_code}\n{response.text}"
+                )
+                return False
+
+            return True
+
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror(
+                "서버 연결 오류",
+                f"로봇 시작 위치를 저장할 수 없습니다.\n{e}"
+            )
+            return False

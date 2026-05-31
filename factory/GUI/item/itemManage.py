@@ -378,7 +378,7 @@ class ItemManageGUI:
                 )
             else:
                 self.status_label.config(
-                    text="등록된 목적지가 없습니다. 먼저 /locations에 목적지를 추가하세요.",
+                    text="등록된 목적지가 없습니다. 먼저 격자 생성에서 목적지를 추가하세요.",
                     fg="red"
                 )
 
