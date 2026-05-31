@@ -107,6 +107,14 @@ class ItemScanGUI:
         self.camera_running = True
         self.last_qr = None
         self.last_detect_time = 0
+        self.latest_image_data = None
+
+        self.result_text.delete("1.0", tk.END)
+        self.result_text.insert(
+            tk.END,
+            "QR 코드를 인식하는 중입니다.\n"
+            "라즈베리파이 카메라에 QR 코드를 비춰주세요.\n"
+        )
 
         self.status_label.config(text="상태: 라즈베리파이 카메라 연결 중")
 
