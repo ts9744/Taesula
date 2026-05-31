@@ -3,8 +3,13 @@ from tkinter import messagebox, ttk
 from PIL import ImageTk
 import qrcode
 import requests
+from pathlib import Path
+import sys
 
-SERVER_URL = "http://taesula.local:8000"
+BASE_DIR = Path(__file__).resolve().parents[2]
+sys.path.append(str(BASE_DIR))
+
+from config import SERVER_URL
 
 class QRGeneratorApp:
     def __init__(self, root, back_callback=None):
@@ -22,13 +27,6 @@ class QRGeneratorApp:
         self.load_locations()
 
     def create_widgets(self):
-        title_label = tk.Label(
-            self.root,
-            text="Item 등록 및 QR 생성",
-            font=("Arial", 18, "bold")
-        )
-        title_label.pack(pady=15)
-
         back_frame = tk.Frame(self.root)
         back_frame.pack(fill="x", padx=10, pady=(10,0))
 
@@ -37,6 +35,13 @@ class QRGeneratorApp:
             text="뒤로가기",
             command=self.go_back
         ).pack(side="left")
+        
+        title_label = tk.Label(
+            self.root,
+            text="Item 등록 및 QR 생성",
+            font=("Arial", 18, "bold")
+        )
+        title_label.pack(pady=15)
 
         guide_label = tk.Label(
             self.root,
@@ -245,10 +250,15 @@ class QRGeneratorApp:
         self.status_label.config(text="입력값이 초기화되었습니다.", fg="gray")
 
     def go_back(self):
+
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        self.root.title("Smart Logistics Robot")
+        self.root.geometry("350x250")
+
         if self.back_callback:
             self.back_callback()
-        else:
-            self.root.destroy()
 
 
 if __name__ == "__main__":

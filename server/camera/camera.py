@@ -1,4 +1,6 @@
 import cv2
+import time
+from threading import Lock
 from fastapi import HTTPException
 
 try:
@@ -8,6 +10,8 @@ except ImportError:
 
 
 camera = None
+camera_lock = Lock()
+
 
 def get_camera():
     global camera
@@ -22,14 +26,21 @@ def get_camera():
         )
         camera.configure(config)
         camera.start()
+        time.sleep(1)
 
     return camera
 
-def generate_camera_stream():
-    cam = get_camera()
 
-    while True:
+def get_frame():
+    with camera_lock:
+        cam = get_camera()
         frame = cam.capture_array()
+        return frame
+
+
+def generate_camera_stream():
+    while True:
+        frame = get_frame()
 
         ret, buffer = cv2.imencode(".jpg", frame)
 

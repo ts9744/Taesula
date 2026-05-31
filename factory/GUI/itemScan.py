@@ -1,14 +1,16 @@
 import tkinter as tk
-from tkinter import messagebox
 import threading
 import time
-import cv2
 import requests
 from PIL import Image, ImageTk
 import io
+from pathlib import Path
+import sys
 
+BASE_DIR = Path(__file__).resolve().parents[1]
+sys.path.append(str(BASE_DIR))
 
-SERVER_URL = "http://taesula.local:8000"
+from config import SERVER_URL
 
 class ItemScanGUI:
     def __init__(self, root, back_callback=None):
@@ -201,7 +203,7 @@ class ItemScanGUI:
 
     def create_route_by_qr(self, qr_code):
         try:
-            response = requests.get(f"{SERVER_URL}/routes/{qr_code}", timeout=3)
+            response = requests.get(f"{SERVER_URL}/route/{qr_code}", timeout=3)
 
             if response.status_code == 200:
                 return response.json()
