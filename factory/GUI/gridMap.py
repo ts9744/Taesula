@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import messagebox, simpledialog
+from tkinter import messagebox
 import requests
 from pathlib import Path
 import sys
@@ -172,17 +172,12 @@ class GridControlGUI:
         elif self.mode == "obstacle":
             if self.start == (row, col):
                 self.start = None
-            if self.goal == (row, col):
-                self.goal = None
             self.grid[row][col] = 1
 
         elif self.mode == "start":
             if self.start is not None:
                 old_r, old_c = self.start
                 self.grid[old_r][old_c] = 0
-
-            if self.goal == (row, col):
-                self.goal = None
 
             self.start = (row, col)
             self.grid[row][col] = 2
@@ -275,14 +270,13 @@ class GridControlGUI:
             self.grid = data["raw_grid"]
 
             self.start = None
-            self.goal = None
 
             for r in range(self.rows):
                 for c in range(self.cols):
                     if self.grid[r][c] == 2:
                         self.start = (r, c)
-                    elif self.grid[r][c] == 3:
-                        self.goal = (r, c)
+
+            self.apply_locations_to_grid()
 
             self.row_entry.delete(0, tk.END)
             self.row_entry.insert(0, str(self.rows))
@@ -382,6 +376,52 @@ class GridControlGUI:
             messagebox.showerror(
                 "서버 연결 오류",
                 f"라즈베리파이 서버에 연결할 수 없습니다.\n{e}"
+            )
+
+    def apply_locations_to_grid(self):
+        try:
+            response = requests.get(
+                f"{SERVER_URL}/locations",
+                timeout=5
+            )
+
+            if response.status_code != 200:
+                messagebox.showerror(
+                    "목적지 불러오기 오류",
+                    f"서버 응답 오류\n상태 코드: {response.status_code}\n{response.text}"
+                )
+                return
+
+            locations = response.json()
+
+            for location in locations:
+                x = location.get("x")
+                y = location.get("y")
+
+                if x is None or y is None:
+                    continue
+
+                # DB에는 1,1 기준으로 저장되어 있으므로
+                # 파이썬 grid 인덱스 기준으로 -1 변환
+                row = x - 1
+                col = y - 1
+
+                if row < 0 or row >= self.rows or col < 0 or col >= self.cols:
+                    continue
+
+                # 장애물이나 시작점은 덮어쓰지 않음
+                if self.grid[row][col] == 1:
+                    continue
+
+                if self.grid[row][col] == 2:
+                    continue
+
+                self.grid[row][col] = 3
+
+        except requests.exceptions.RequestException as e:
+            messagebox.showerror(
+                "서버 연결 오류",
+                f"목적지 목록을 불러올 수 없습니다.\n{e}"
             )
 
     def ask_location_name(self, x, y):
