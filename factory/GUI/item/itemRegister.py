@@ -201,9 +201,14 @@ class ItemRegisterGUI:
             )
 
             if response.status_code != 200:
+                try:
+                    error_detail = response.json().get("detail", response.text)
+                except Exception:
+                    error_detail = response.text
+
                 messagebox.showerror(
                     "저장 오류",
-                    f"서버 DB 저장 실패\nstatus code: {response.status_code}\n{response.text}"
+                    f"서버 DB 저장 실패\nstatus code: {response.status_code}\n{error_detail}"
                 )
                 return
 

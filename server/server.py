@@ -64,24 +64,63 @@ def load_grid_from_db():
 current_command = "stop"
 current_path = []
 
-def path_to_commands(path):
+DIRECTIONS = ["north", "east", "south", "west"]
+
+def get_target_direction(prev_pos, next_pos):
+    prev_x, prev_y = prev_pos
+    next_x, next_y = next_pos
+
+    dx = next_x - prev_x
+    dy = next_y - prev_y
+
+    if dx == 1 and dy == 0:
+        return "east"
+    elif dx == -1 and dy == 0:
+        return "west"
+    elif dx == 0 and dy == 1:
+        return "south"
+    elif dx == 0 and dy == -1:
+        return "north"
+
+    return None
+
+def get_turn_commands(current_direction, target_direction):
+    current_idx = DIRECTIONS.index(current_direction)
+    target_idx = DIRECTIONS.index(target_direction)
+
+    diff = (target_idx - current_idx) % 4
+
+    if diff == 0:
+        return []
+    elif diff == 1:
+        return ["right"]
+    elif diff == 3:
+        return ["left"]
+    elif diff == 2:
+        return ["right", "right"]
+
+    return []
+
+
+def path_to_commands(path, start_direction="east"):
     commands = []
+    current_direction = start_direction
 
     for i in range(1, len(path)):
-        prev_x, prev_y = path[i - 1]
-        curr_x, curr_y = path[i]
+        prev_pos = path[i - 1]
+        next_pos = path[i]
 
-        dx = curr_x - prev_x
-        dy = curr_y - prev_y
+        target_direction = get_target_direction(prev_pos, next_pos)
 
-        if dx == 1:
-            commands.append("forward")
-        elif dx == -1:
-            commands.append("backward")
-        elif dy == 1:
-            commands.append("right")
-        elif dy == -1:
-            commands.append("left")
+        if target_direction is None:
+            continue
+
+        turn_commands = get_turn_commands(current_direction, target_direction)
+
+        commands.extend(turn_commands)
+        commands.append("forward")
+
+        current_direction = target_direction
 
     commands.append("stop")
     return commands
@@ -196,18 +235,61 @@ def set_path(path_data: PathRequest):
 # CREATE
 @app.post("/items")
 def create_item(name: str, qr_code: str, destination_id: int):
-    conn = get_db()
-    cursor = conn.cursor()
+    conn = None
 
-    cursor.execute(
-        "INSERT INTO items (name, qr_code, destination_id) VALUES (?, ?, ?)",
-        (name, qr_code, destination_id)
-    )
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
 
-    conn.commit()
-    conn.close()
+        # 같은 이름의 item이 이미 있는지 확인
+        cursor.execute(
+            "SELECT id FROM items WHERE name=?",
+            (name,)
+        )
+        duplicate_name = cursor.fetchone()
 
-    return {"message": "item created"}
+        if duplicate_name:
+            raise HTTPException(
+                status_code=400,
+                detail="이미 같은 이름의 item이 존재합니다."
+            )
+
+        # 같은 qr_code의 item이 이미 있는지 확인
+        cursor.execute(
+            "SELECT id FROM items WHERE qr_code=?",
+            (qr_code,)
+        )
+        duplicate_qr = cursor.fetchone()
+
+        if duplicate_qr:
+            raise HTTPException(
+                status_code=400,
+                detail="이미 같은 qr_code를 가진 item이 존재합니다."
+            )
+
+        cursor.execute(
+            "INSERT INTO items (name, qr_code, destination_id) VALUES (?, ?, ?)",
+            (name, qr_code, destination_id)
+        )
+
+        conn.commit()
+
+        return {
+            "message": "item created",
+            "name": name,
+            "qr_code": qr_code,
+            "destination_id": destination_id
+        }
+
+    except sqlite3.OperationalError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"DB 처리 중 오류가 발생했습니다: {e}"
+        )
+
+    finally:
+        if conn:
+            conn.close()
 
 # READ ALL
 @app.get("/items")
@@ -276,18 +358,62 @@ def get_item(qr_code: str):
 # UPDATE
 @app.put("/items/{qr_code}")
 def update_item(qr_code: str, name: str, destination_id: int):
-    conn = get_db()
-    cursor = conn.cursor()
+    conn = None
 
-    cursor.execute(
-        "UPDATE items SET name=?, destination_id=? WHERE qr_code=?",
-        (name, destination_id, qr_code)
-    )
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
 
-    conn.commit()
-    conn.close()
+        # 수정 대상 item 존재 여부 확인
+        cursor.execute(
+            "SELECT id FROM items WHERE qr_code=?",
+            (qr_code,)
+        )
+        target_item = cursor.fetchone()
 
-    return {"message": "updated"}
+        if not target_item:
+            raise HTTPException(
+                status_code=404,
+                detail="수정할 item을 찾을 수 없습니다."
+            )
+
+        # 같은 이름을 가진 다른 item이 있는지 확인
+        cursor.execute(
+            "SELECT id FROM items WHERE name=? AND qr_code<>?",
+            (name, qr_code)
+        )
+        duplicate_item = cursor.fetchone()
+
+        if duplicate_item:
+            raise HTTPException(
+                status_code=400,
+                detail="이미 같은 이름의 item이 존재합니다."
+            )
+
+        # item 정보 수정
+        cursor.execute(
+            "UPDATE items SET name=?, destination_id=? WHERE qr_code=?",
+            (name, destination_id, qr_code)
+        )
+
+        conn.commit()
+
+        return {
+            "message": "item updated",
+            "qr_code": qr_code,
+            "name": name,
+            "destination_id": destination_id
+        }
+
+    except sqlite3.OperationalError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"DB 처리 중 오류가 발생했습니다: {e}"
+        )
+
+    finally:
+        if conn:
+            conn.close()
 
 # DELETE
 @app.delete("/items/{qr_code}")
@@ -360,6 +486,7 @@ def get_route_by_qr(qr_code: str):
             "detail": "grid_map 테이블에 pathfinding_grid 데이터 필요"
         }
 
+
     # 4. 조회한 DB 결과를 경로 탐색에 사용할 값으로 분리
     item_id = item_row[0]
     item_name = item_row[1]
@@ -379,30 +506,33 @@ def get_route_by_qr(qr_code: str):
     rows = len(grid)
     cols = len(grid[0])
 
+    start_x, start_y = start
+    goal_x_pos, goal_y_pos = goal
+
     # 5. 시작 좌표와 목적지 좌표가 grid 범위 안에 있는지 확인
-    if not (0 <= start[0] < rows and 0 <= start[1] < cols):
+    if not (0 <= start_x < cols and 0 <= start_y < rows):
         return {
             "message": "start position is out of grid range",
-            "start": [start[0], start[1]]
+            "start": [start_x, start_y]
         }
 
-    if not (0 <= goal[0] < rows and 0 <= goal[1] < cols):
+    if not (0 <= goal_x_pos < cols and 0 <= goal_y_pos < rows):
         return {
             "message": "goal position is out of grid range",
-            "goal": [goal[0], goal[1]]
+            "goal": [goal_x_pos, goal_y_pos]
         }
 
     # 6. 시작점과 목적지가 장애물 칸인지 확인
-    if grid[start[0]][start[1]] == 1:
+    if grid[start_y][start_x] == 1:
         return {
             "message": "start position is obstacle",
-            "start": [start[0], start[1]]
+            "start": [start_x, start_y]
         }
 
-    if grid[goal[0]][goal[1]] == 1:
+    if grid[goal_y_pos][goal_x_pos] == 1:
         return {
             "message": "goal position is obstacle",
-            "goal": [goal[0], goal[1]]
+            "goal": [goal_x_pos, goal_y_pos]
         }
 
     # 7. A* 알고리즘으로 현재 위치에서 목적지까지의 좌표 경로 탐색
@@ -416,13 +546,15 @@ def get_route_by_qr(qr_code: str):
             "start": [start[0], start[1]],
             "goal": [goal[0], goal[1]]
         }
+    
+    start_direction = "east"
 
     # 8. 좌표 경로를 JSON 응답용 리스트와 ESP32 명령 리스트로 변환
     path_list = [[x, y] for x, y in path]
-    command_path = path_to_commands(path)
+    command_path = path_to_commands(path, start_direction)
 
     # 9. /next-command API에서 순차적으로 가져갈 수 있도록 명령 경로 저장
-    current_path = command_path
+    current_path = command_path.copy()
 
     # 10. item, robot, destination, path 정보를 응답
     return {
@@ -436,7 +568,8 @@ def get_route_by_qr(qr_code: str):
         "robot": {
             "current_x": current_x,
             "current_y": current_y,
-            "status": robot_status
+            "status": robot_status,
+            "start_direction": start_direction
         },
         "destination": {
             "zone_name": zone_name,
@@ -592,6 +725,124 @@ def get_locations():
         }
         for row in rows
     ]
+
+# UPDATE
+@app.put("/locations/{location_id}")
+def update_location(location_id: int, zone_name: str, x: int, y: int):
+    conn = None
+
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+
+        # 수정 대상 location 존재 여부 확인
+        cursor.execute(
+            "SELECT id FROM locations WHERE id=?",
+            (location_id,)
+        )
+        target_location = cursor.fetchone()
+
+        if not target_location:
+            raise HTTPException(
+                status_code=404,
+                detail="수정할 location을 찾을 수 없습니다."
+            )
+
+        # 같은 이름을 가진 다른 location이 있는지 확인
+        cursor.execute(
+            "SELECT id FROM locations WHERE zone_name=? AND id<>?",
+            (zone_name, location_id)
+        )
+        duplicate_location = cursor.fetchone()
+
+        if duplicate_location:
+            raise HTTPException(
+                status_code=400,
+                detail="이미 같은 이름의 location이 존재합니다."
+            )
+
+        cursor.execute(
+            "UPDATE locations SET zone_name=?, x=?, y=? WHERE id=?",
+            (zone_name, x, y, location_id)
+        )
+
+        conn.commit()
+
+        return {
+            "message": "location updated",
+            "id": location_id,
+            "zone_name": zone_name,
+            "x": x,
+            "y": y
+        }
+
+    except sqlite3.OperationalError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"DB 처리 중 오류가 발생했습니다: {e}"
+        )
+
+    finally:
+        if conn:
+            conn.close()
+
+
+# DELETE
+@app.delete("/locations/{location_id}")
+def delete_location(location_id: int):
+    conn = None
+
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+
+        # 삭제 대상 location 존재 여부 확인
+        cursor.execute(
+            "SELECT id FROM locations WHERE id=?",
+            (location_id,)
+        )
+        target_location = cursor.fetchone()
+
+        if not target_location:
+            raise HTTPException(
+                status_code=404,
+                detail="삭제할 location을 찾을 수 없습니다."
+            )
+
+        # 해당 location을 목적지로 사용하는 item이 있는지 확인
+        cursor.execute(
+            "SELECT id FROM items WHERE destination_id=?",
+            (location_id,)
+        )
+        linked_item = cursor.fetchone()
+
+        if linked_item:
+            raise HTTPException(
+                status_code=400,
+                detail="해당 location을 목적지로 사용하는 item이 있어 삭제할 수 없습니다."
+            )
+
+        cursor.execute(
+            "DELETE FROM locations WHERE id=?",
+            (location_id,)
+        )
+
+        conn.commit()
+
+        return {
+            "message": "location deleted",
+            "id": location_id
+        }
+
+    except sqlite3.OperationalError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"DB 처리 중 오류가 발생했습니다: {e}"
+        )
+
+    finally:
+        if conn:
+            conn.close()
 
 # =========================
 # ITEM STATUS API
