@@ -12,7 +12,7 @@ const int ECHO_PIN = 18;
 // OUT1/OUT2 -> 앞왼쪽 모터
 // OUT3/OUT4 -> 앞오른쪽 모터
 // ===============================
-const int FL_IN1 = 26;  // Front Left IN1
+const int FL_IN1 = 16;  // Front Left IN1
 const int FL_IN2 = 27;  // Front Left IN2
 
 const int FR_IN1 = 14;  // Front Right IN3
@@ -41,7 +41,7 @@ const bool AUTO_TEST_MODE = true;
 // "FORWARD"  = 3초 대기 후 3초 전진 후 정지
 // "BACKWARD" = 3초 대기 후 3초 후진 후 정지
 
-const String AUTO_TEST_TYPE = "LEFT";
+const String AUTO_TEST_TYPE = "RIGHT";
 // 자동 주행 시작 전 대기 시간(ms)
 const unsigned long START_DELAY_MS = 3000;
 const unsigned long FORWARD_RUN_MS = 1000;
@@ -68,6 +68,7 @@ void setMotor(int in1, int in2, bool forward);
 void handleCommand(char command);
 void runAutoTestMode();
 void runForwardLeftStopTest();
+void runForwardRightStopTest();
 long getDistanceCm();
 bool isObstacleDetected();
 bool isObstacleByDistance(long distance);
@@ -95,6 +96,8 @@ void setup() {
 
   stopMotor();
 
+  delay(500);
+  
   startTime = millis();
 
   Serial.println("ESP32 4-Wheel Robot Control Start");
@@ -152,6 +155,23 @@ void runForwardLeftStopTest() {
   Serial.println("AUTO TEST FINISHED");
 }
 
+void runForwardRightStopTest() {
+  Serial.println("AUTO TEST START: FORWARD -> RIGHT -> STOP");
+
+  Serial.println("AUTO TEST STEP 1: FORWARD");
+  moveForward();
+  delay(1000);
+
+  Serial.println("AUTO TEST STEP 2: RIGHT");
+  turnRight();
+  delay(1000);
+
+  Serial.println("AUTO TEST STEP 3: STOP");
+  stopMotor();
+
+  Serial.println("AUTO TEST FINISHED");
+  autoFinished = true ; 
+}
 // 자동 주행 테스트 함수
 // 전원 켜진 뒤 3초 대기 → 선택된 방향으로 3초 이동 → 4바퀴 전체 정지
 void runAutoTestMode() {
@@ -182,7 +202,11 @@ void runAutoTestMode() {
       autoFinished = true;
       return;
     }
-
+    else if (AUTO_TEST_TYPE == "RIGHT"){
+      runForwardRightStopTest();
+      autoFinished = true; 
+      return ; 
+    }
     else {
       Serial.println("Invalid AUTO_TEST_TYPE. Robot stopped.");
       stopMotor();
@@ -280,10 +304,10 @@ void turnRight() {
   digitalWrite(LED_PIN, HIGH);
 
   setMotor(FL_IN1, FL_IN2, true);
-  setMotor(RL_IN1, RL_IN2, true);
+  stopMotorPair(FR_IN1, FR_IN2);
 
-  setMotor(FR_IN1, FR_IN2, false);
-  setMotor(RR_IN1, RR_IN2, false);
+  setMotor(RR_IN1, RR_IN2, true);
+  stopMotorPair(RL_IN1, RL_IN2);
 }
 
 // 정지
