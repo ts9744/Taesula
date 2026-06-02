@@ -7,7 +7,7 @@ import sys
 BASE_DIR = Path(__file__).resolve().parents[2]
 sys.path.append(str(BASE_DIR))
 
-from config import SERVER_URL
+from config import MAIN_GUI_SIZE, SERVER_URL
 
 
 class ItemManageGUI:
@@ -378,7 +378,7 @@ class ItemManageGUI:
                 )
             else:
                 self.status_label.config(
-                    text="등록된 목적지가 없습니다. 먼저 /locations에 목적지를 추가하세요.",
+                    text="등록된 목적지가 없습니다. 먼저 격자 생성에서 목적지를 추가하세요.",
                     fg="red"
                 )
 
@@ -393,7 +393,7 @@ class ItemManageGUI:
             widget.destroy()
 
         self.root.title("Smart Logistics Robot")
-        self.root.geometry("450x350")
+        self.root.geometry(MAIN_GUI_SIZE)
 
         if self.back_callback:
             self.back_callback()
