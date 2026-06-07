@@ -23,11 +23,11 @@ const int FR_IN2 = 12;  // Front Right IN4
 // OUT1/OUT2 -> 뒤왼쪽 모터
 // OUT3/OUT4 -> 뒤오른쪽 모터
 // ===============================
-const int RL_IN1 = 25;  // Rear Left IN1
-const int RL_IN2 = 33;  // Rear Left IN2
+const int RL_IN1 = 32;  // Rear Left IN1
+const int RL_IN2 = 13;  // Rear Left IN2
 
-const int RR_IN1 = 32;  // Rear Right IN3
-const int RR_IN2 = 13;  // Rear Right IN4
+const int RR_IN1 = 25;  // Rear Right IN3
+const int RR_IN2 = 33;  // Rear Right IN4
 
 // 장애물 판단 기준 거리(cm)
 const int OBSTACLE_DISTANCE = 15;
