@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
 
 // 테스트용 LED 핀
 const int LED_PIN = 2;
@@ -35,13 +37,14 @@ const int OBSTACLE_DISTANCE = 15;
 // 자동 바닥 주행 테스트 모드
 // true  = 전원 켜면 3초 뒤 자동 전진
 // false = 시리얼 명령 입력해야 움직임
-const bool AUTO_TEST_MODE = true;
+const bool AUTO_TEST_MODE = false;
 
 // 자동 테스트 종류
 // "FORWARD"  = 3초 대기 후 3초 전진 후 정지
 // "BACKWARD" = 3초 대기 후 3초 후진 후 정지
 
 const String AUTO_TEST_TYPE = "RIGHT";
+
 // 자동 주행 시작 전 대기 시간(ms)
 const unsigned long START_DELAY_MS = 3000;
 const unsigned long FORWARD_RUN_MS = 1000;
@@ -57,6 +60,17 @@ bool autoStoppedByObstacle = false;
 unsigned long startTime = 0;
 unsigned long forwardStartTime = 0;
 unsigned long lastSensorCheckTime = 0;
+
+// 와이파이 연결 변수
+const char* WIFI_SSID = "iptime";
+const char* WIFI_PASSWORD = "";
+
+// 라즈베리파이 IP 변수
+const char* SERVER_URL = "http://taesula.local:8000/test-command";
+
+// 명령 요청 간격
+unsigned long lastCommandRequestTime = 0;
+const unsigned long COMMAND_REQUEST_INTERVAL_MS = 2000;
 
 // 함수 선언
 void moveForward();
@@ -131,11 +145,18 @@ void setup() {
     Serial.println("AUTO TEST MODE = OFF");
     Serial.println("Use serial commands to control robot.");
   }
+  connectWiFi();
 }
 
 void loop() {
   if (AUTO_TEST_MODE) {
     runAutoTestMode();
+  }
+  else {
+    if (millis() - lastCommandRequestTime >= COMMAND_REQUEST_INTERVAL_MS) {
+      lastCommandRequestTime = millis();
+      requestCommandFromServer();
+    }
   }
 
   // 자동 모드여도 시리얼 명령은 디버깅용으로 받을 수 있게 유지
@@ -463,5 +484,103 @@ void testObstacleDetection(long testDistance) {
     stopMotor();
   } else {
     Serial.println("No obstacle in test data.");
+  }
+}
+
+void connectWiFi() {
+  Serial.print("Connecting to WiFi: ");
+  Serial.println(WIFI_SSID);
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  int retryCount = 0;
+
+  while (WiFi.status() != WL_CONNECTED && retryCount < 30) {
+    delay(500);
+    Serial.print(".");
+    retryCount++;
+  }
+
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("WiFi connected");
+    Serial.print("ESP32 IP: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("WiFi connection failed");
+  }
+}
+
+void requestCommandFromServer() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi disconnected. Reconnecting...");
+    connectWiFi();
+    return;
+  }
+
+  HTTPClient http;
+  http.begin(SERVER_URL);
+
+  int httpCode = http.GET();
+
+  if (httpCode == 200) {
+    String response = http.getString();
+
+    Serial.print("Server response: ");
+    Serial.println(response);
+
+    String direction = extractDirection(response);
+    handleServerDirection(direction);
+  } else {
+    Serial.print("HTTP request failed. Code: ");
+    Serial.println(httpCode);
+  }
+
+  http.end();
+}
+
+String extractDirection(String response) {
+  String key = "\"direction\":\"";
+  int startIndex = response.indexOf(key);
+
+  if (startIndex == -1) {
+    return "";
+  }
+
+  startIndex += key.length();
+
+  int endIndex = response.indexOf("\"", startIndex);
+
+  if (endIndex == -1) {
+    return "";
+  }
+
+  return response.substring(startIndex, endIndex);
+}
+
+void handleServerDirection(String direction) {
+  direction.trim();
+
+  if (direction == "forward") {
+      moveForwardStep();
+    }
+  
+  else if (direction == "backward") {
+    moveBackwardStep();
+  }
+  else if (direction == "left") {
+    turnLeftStep();
+  }
+  else if (direction == "right") {
+    turnRightStep();
+  }
+  else if (direction == "stop") {
+    stopMotor();
+    Serial.println("Robot Action: STOP");
+  }
+  else {
+    Serial.print("Unknown server direction: ");
+    Serial.println(direction);
   }
 }
