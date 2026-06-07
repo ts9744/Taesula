@@ -48,7 +48,8 @@ const unsigned long FORWARD_RUN_MS = 1000;
 const unsigned long TURN_RUN_MS = 1000;
 // 초음파 센서 확인 간격(ms)
 const unsigned long SENSOR_CHECK_INTERVAL_MS = 200;
-
+const int MOTOR_SPEED = 150; 
+const int TURN_SPEED = 200;   
 // 자동 테스트 상태 변수
 bool autoStarted = false;
 bool autoFinished = false;
@@ -64,7 +65,7 @@ void turnLeft();
 void turnRight();
 void stopMotor();
 void stopMotorPair(int in1, int in2);
-void setMotor(int in1, int in2, bool forward);
+void setMotor(int in1, int in2, bool forward, int speed);
 void handleCommand(char command);
 void runAutoTestMode();
 void runForwardLeftStopTest();
@@ -73,6 +74,15 @@ long getDistanceCm();
 bool isObstacleDetected();
 bool isObstacleByDistance(long distance);
 void testObstacleDetection(long testDistance);
+void connectWiFi();
+void requestCommandFromServer();
+String extractDirection(String response);
+void handleServerDirection(String direction);
+void moveForwardStep();
+void moveBackwardStep();
+void turnLeftStep();
+void turnRightStep();
+
 
 void setup() {
   Serial.begin(115200);
@@ -246,13 +256,13 @@ void runAutoTestMode() {
 }
 
 // 모터 하나 방향 제어 함수
-void setMotor(int in1, int in2, bool forward) {
+void setMotor(int in1, int in2, bool forward, int speed) {
   if (forward) {
-    digitalWrite(in1, HIGH);
+    analogWrite(in1, speed);
     digitalWrite(in2, LOW);
   } else {
     digitalWrite(in1, LOW);
-    digitalWrite(in2, HIGH);
+    analogWrite(in2, speed);
   }
 }
 
@@ -261,10 +271,10 @@ void moveForward() {
   Serial.println("Robot Action: FORWARD");
   digitalWrite(LED_PIN, HIGH);
 
-  setMotor(FL_IN1, FL_IN2, true);
-  setMotor(FR_IN1, FR_IN2, true);
-  setMotor(RL_IN1, RL_IN2, true);
-  setMotor(RR_IN1, RR_IN2, true);
+  setMotor(FL_IN1, FL_IN2, true, MOTOR_SPEED);
+  setMotor(FR_IN1, FR_IN2, true, MOTOR_SPEED);
+  setMotor(RL_IN1, RL_IN2, true, MOTOR_SPEED);
+  setMotor(RR_IN1, RR_IN2, true, MOTOR_SPEED);
 }
 
 // 후진
@@ -272,10 +282,10 @@ void moveBackward() {
   Serial.println("Robot Action: BACKWARD");
   digitalWrite(LED_PIN, HIGH);
 
-  setMotor(FL_IN1, FL_IN2, false);
-  setMotor(FR_IN1, FR_IN2, false);
-  setMotor(RL_IN1, RL_IN2, false);
-  setMotor(RR_IN1, RR_IN2, false);
+  setMotor(FL_IN1, FL_IN2, false,MOTOR_SPEED);
+  setMotor(FR_IN1, FR_IN2, false,MOTOR_SPEED);
+  setMotor(RL_IN1, RL_IN2, false,MOTOR_SPEED);
+  setMotor(RR_IN1, RR_IN2, false,MOTOR_SPEED);
 }
 
 // 좌회전
@@ -284,15 +294,19 @@ void turnLeft() {
   Serial.println("Robot Action: LEFT");
   digitalWrite(LED_PIN, HIGH);
 
-  stopMotorPair(FL_IN1, FL_IN2);
-  stopMotorPair(RR_IN1, RR_IN2);
+  // Left wheels backward
+  setMotor(FL_IN1, FL_IN2,false, TURN_SPEED);
+  setMotor(RL_IN1, RL_IN2, false, TURN_SPEED);
 
-  setMotor(FR_IN1, FR_IN2, true);
-  setMotor(RL_IN1, RL_IN2, true);
+  // Right wheels forward
+  setMotor(FR_IN1, FR_IN2, true, TURN_SPEED);
+  setMotor(RR_IN1, RR_IN2, true, TURN_SPEED);
 }
 
 // 왼쪽 앞/뒤 바퀴 정지
 void stopMotorPair(int in1, int in2) {
+  analogWrite(in1, 0);
+  analogWrite(in2, 0);
   digitalWrite(in1, LOW);
   digitalWrite(in2, LOW);
 }
@@ -303,28 +317,51 @@ void turnRight() {
   Serial.println("Robot Action: RIGHT");
   digitalWrite(LED_PIN, HIGH);
 
-  setMotor(FL_IN1, FL_IN2, true);
-  stopMotorPair(FR_IN1, FR_IN2);
+  // Left wheels forward
+  setMotor(FL_IN1, FL_IN2, true, TURN_SPEED);
+  setMotor(RL_IN1, RL_IN2, true, TURN_SPEED);
 
-  setMotor(RR_IN1, RR_IN2, true);
-  stopMotorPair(RL_IN1, RL_IN2);
+  // Right wheels backward
+  setMotor(FR_IN1, FR_IN2, false, TURN_SPEED);
+  setMotor(RR_IN1, RR_IN2, false, TURN_SPEED);
 }
 
+void moveForwardStep() {
+  Serial.println("STEP: FORWARD");
+  moveForward();
+  delay(FORWARD_RUN_MS);
+  stopMotor();
+}
+
+void moveBackwardStep() {
+  Serial.println("STEP: BACKWARD");
+  moveBackward();
+  delay(FORWARD_RUN_MS);
+  stopMotor();
+}
+
+void turnLeftStep() {
+  Serial.println("STEP: LEFT");
+  turnLeft();
+  delay(TURN_RUN_MS);
+  stopMotor();
+}
+
+void turnRightStep() {
+  Serial.println("STEP: RIGHT");
+  turnRight();
+  delay(TURN_RUN_MS);
+  stopMotor();
+}
 // 정지
 void stopMotor() {
   digitalWrite(LED_PIN, LOW);
 
-  digitalWrite(FL_IN1, LOW);
-  digitalWrite(FL_IN2, LOW);
+  stopMotorPair(FL_IN1, FL_IN2);
+  stopMotorPair(FR_IN1, FR_IN2);
+  stopMotorPair(RL_IN1, RL_IN2);
+  stopMotorPair(RR_IN1, RR_IN2);
 
-  digitalWrite(FR_IN1, LOW);
-  digitalWrite(FR_IN2, LOW);
-
-  digitalWrite(RL_IN1, LOW);
-  digitalWrite(RL_IN2, LOW);
-
-  digitalWrite(RR_IN1, LOW);
-  digitalWrite(RR_IN2, LOW);
 }
 
 // 명령 처리 함수
