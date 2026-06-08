@@ -91,27 +91,26 @@ def get_target_direction(prev_pos, next_pos):
 
     return None
 
-def get_turn_commands(current_direction, target_direction):
-    current_idx = DIRECTIONS.index(current_direction)
-    target_idx = DIRECTIONS.index(target_direction)
+# def get_turn_commands(current_direction, target_direction):
+#     current_idx = DIRECTIONS.index(current_direction)
+#     target_idx = DIRECTIONS.index(target_direction)
 
-    diff = (target_idx - current_idx) % 4
+#     diff = (target_idx - current_idx) % 4
 
-    if diff == 0:
-        return []
-    elif diff == 1:
-        return ["right"]
-    elif diff == 3:
-        return ["left"]
-    elif diff == 2:
-        return ["right", "right"]
+#     if diff == 0:
+#         return []
+#     elif diff == 1:
+#         return ["right"]
+#     elif diff == 3:
+#         return ["left"]
+#     elif diff == 2:
+#         return ["right", "right"]
 
-    return []
+#     return []
 
 
-def path_to_commands(path, start_direction="east"):
+def path_to_commands(path, start_direction):
     commands = []
-    current_direction = start_direction
 
     for i in range(1, len(path)):
         prev_pos = path[i - 1]
@@ -122,15 +121,30 @@ def path_to_commands(path, start_direction="east"):
         if target_direction is None:
             continue
 
-        turn_commands = get_turn_commands(current_direction, target_direction)
-
-        commands.extend(turn_commands)
-        commands.append("forward")
-
-        current_direction = target_direction
+        move_command = direction_to_move_command(target_direction, start_direction)
+        commands.append(move_command)
 
     commands.append("stop")
     return commands
+
+def direction_to_move_command(target_direction, start_direction):
+    directions = ["north", "east", "south", "west"]
+
+    current_idx = directions.index(start_direction)
+    target_idx = directions.index(target_direction)
+
+    diff = (target_idx - current_idx) % 4
+
+    if diff == 0:
+        return "forward"
+    elif diff == 1:
+        return "right"
+    elif diff == 2:
+        return "backward"
+    elif diff == 3:
+        return "left"
+
+    return "stop"
 
 # =========================
 # REQUEST MODELS
@@ -591,7 +605,8 @@ def get_route_by_qr(qr_code: str):
             "goal": [goal[0], goal[1]]
         }
     
-    start_direction = "east"
+    # TODO: 시작 방향을 DB에서 조회해서 A*에 넘겨주고, 그에 맞게 path_to_commands도 수정하기
+    start_direction = "north"
 
     # 8. 좌표 경로를 JSON 응답용 리스트와 ESP32 명령 리스트로 변환
     path_list = [[x, y] for x, y in path]
