@@ -22,7 +22,7 @@ def get_camera():
     if camera is None:
         camera = Picamera2()
         config = camera.create_preview_configuration(
-            main={"size": (640, 480), "format": "RGB888"}
+            main={"size": (1280, 720), "format": "RGB888"}
         )
         camera.configure(config)
         camera.start()
