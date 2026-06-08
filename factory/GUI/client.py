@@ -6,8 +6,15 @@ from item.itemScan import ItemScanGUI
 from item.itemRegister import ItemRegisterGUI
 from item.itemManage import ItemManageGUI
 
-BASE_DIR = Path(__file__).resolve().parents[1]
-sys.path.append(str(BASE_DIR))
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(sys._MEIPASS)
+else:
+    BASE_DIR = Path(__file__).resolve().parents[1]
+
+GUI_DIR = BASE_DIR / "GUI"
+
+sys.path.insert(0, str(BASE_DIR))
+sys.path.insert(0, str(GUI_DIR))
 
 from config import MAIN_GUI_SIZE
 

@@ -540,8 +540,8 @@ def get_route_by_qr(qr_code: str):
     goal_x = item_row[5] - 1
     goal_y = item_row[6] - 1
 
-    current_x = robot_row[0]
-    current_y = robot_row[1]
+    current_x = robot_row[0] - 1
+    current_y = robot_row[1] - 1
     robot_status = robot_row[2]
 
     start = (current_x, current_y)
