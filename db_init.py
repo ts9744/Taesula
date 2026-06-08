@@ -50,5 +50,3 @@ VALUES (1, 0, 0, 'idle')
 
 conn.commit()
 conn.close()
-
-print("DB 생성 완료")
