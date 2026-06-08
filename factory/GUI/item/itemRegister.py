@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, ttk, filedialog
 from PIL import ImageTk
 import qrcode
 import requests
@@ -21,6 +21,7 @@ class ItemRegisterGUI:
 
         self.qr_image = None
         self.qr_preview = None
+        self.qr_code_text = None
         self.locations = []
 
         self.create_widgets()
@@ -113,6 +114,14 @@ class ItemRegisterGUI:
             font = ("Arial", 11)
         )
         self.preview_label.pack(expand=True)
+        self.qr_menu = tk.Menu(self.root, tearoff=0)
+        self.qr_menu.add_command(
+            label="QR 코드 PNG로 저장",
+            command=self.save_qr_image
+        )
+
+        self.preview_label.bind("<Button-3>", self.show_qr_menu)
+        self.preview_frame.bind("<Button-3>", self.show_qr_menu)
 
         self.status_label = tk.Label(
             self.root,
@@ -233,6 +242,8 @@ class ItemRegisterGUI:
         )
 
     def generate_qr_image(self, qr_text):
+        self.qr_code_text = qr_text
+
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_M,
@@ -253,10 +264,38 @@ class ItemRegisterGUI:
 
         self.preview_label.config(image=self.qr_preview, text="")
 
+    def show_qr_menu(self, event):
+        if self.qr_image is None:
+            return
+
+        self.qr_menu.tk_popup(event.x_root, event.y_root)
+
+
+    def save_qr_image(self):
+        if self.qr_image is None:
+            messagebox.showwarning("저장 오류", "먼저 QR 코드를 생성하세요.")
+            return
+
+        safe_name = self.qr_code_text or "qr_code"
+        safe_name = safe_name.replace(" ", "_").replace("/", "_")
+
+        file_path = filedialog.asksaveasfilename(
+            initialfile=f"{safe_name}.png",
+            defaultextension=".png",
+            filetypes=[("PNG files", "*.png")]
+        )
+
+        if not file_path:
+            return
+
+        self.qr_image.save(file_path)
+        messagebox.showinfo("저장 완료", "QR 코드 이미지가 PNG 파일로 저장되었습니다.")
+
     def clear_qr(self):
         self.item_entry.delete(0, tk.END)
         self.qr_image = None
         self.qr_preview = None
+        self.qr_code_text = None
         self.preview_label.config(image="", text="QR 미리보기")
         self.preview_label.image = None
         self.status_label.config(text="입력값이 초기화되었습니다.", fg="gray")
