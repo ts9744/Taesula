@@ -271,13 +271,13 @@ class ItemScanGUI:
 
             self.result_text.insert(
                 tk.END,
-                f"현재 로봇 위치: ({robot.get('current_x')}, {robot.get('current_y')})\n"
+                f"현재 로봇 위치: ({robot.get('current_x') + 1}, {robot.get('current_y') + 1})\n"
             )
 
             self.result_text.insert(
                 tk.END,
                 f"목적지: {destination.get('zone_name')} "
-                f"({destination.get('x')}, {destination.get('y')})\n\n"
+                f"({destination.get('x') + 1}, {destination.get('y') + 1})\n\n"
             )
 
             self.result_text.insert(tk.END, f"좌표 경로 개수: {len(path)}개\n")
