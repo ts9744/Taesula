@@ -127,6 +127,42 @@ project/
 
 ---
 
+## 🔄 개발 중 참고사항
+
+### SIDA 이동 명령 기준
+
+현재 SIDA의 `command_path`는 A* 알고리즘으로 계산된 좌표 경로를 기반으로 생성된다.
+
+단, 로봇의 완벽한 횡이동이 어렵다고 판단하여, 현재는 **회전 후 전진 방식**을 기준으로 이동 명령을 생성한다.
+
+명령의 의미는 다음과 같다.
+
+```text
+forward : 현재 SIDA가 바라보는 방향으로 한 칸 전진
+left    : 제자리 좌회전
+right   : 제자리 우회전
+stop    : 정지
+```
+
+따라서 `left`, `right`는 좌우 평행이동이 아니라 **방향 전환 명령**으로 사용한다.
+
+---
+
+### ESP32 테스트 명령 참고
+
+ESP32 모터 동작을 단독으로 확인할 때는 `/test-command` API를 사용한다.
+
+실제 경로 주행은 `/next-command`를 사용하고, 단순 모터 테스트는 `/test-command`를 사용하여 두 흐름을 분리한다.
+
+```text
+/test-command : forward, left, right, stop 단일 명령 테스트
+/next-command : A* 경로 기반 command_path 순차 실행
+```
+
+테스트가 끝난 뒤 실제 주행을 확인할 때는 ESP32 코드의 서버 URL이 `/next-command`를 바라보는지 확인해야 한다.
+
+---
+
 ## 👨‍👩‍👧‍👦 팀원 및 역할
 
 | 이름   | 역할                |
@@ -137,6 +173,7 @@ project/
 | 차병철 | AI 및 경로 알고리즘 |
 
 ---
+
 
 ## 💡 기대 효과
 
@@ -183,6 +220,8 @@ Serial Monitor를 이용하여 PC에서 ESP32로 이동 명령을 전송하는 �
 
 테스트 결과, 각 명령 입력 시 `moveForward()`, `moveBackward()`, `turnLeft()`, `turnRight()`, `stopMotor()` 함수가 정상적으로 호출되는 것을 확인하였다.  
 현재는 실제 모터 연결 전 단계이므로 LED와 Serial 출력을 이용하여 제어 분기 로직을 검증하였다.
+
+
 
 ### 3. 초음파 센서 연동 준비
 
@@ -251,3 +290,41 @@ pip install -r requirements.txt
 sudo apt install -y python3-picamera2 python3-opencv
 ```
 python3-picamera2는 라즈베리파이 카메라 모듈을 제어하기 위한 라이브러리이며, python3-opencv는 카메라 프레임 처리 및 QR 코드 인식에 사용된다.
+
+## 🤖 챗봇(자연어 제어 / 재고 조회) 설정
+
+챗봇은 [Ollama](https://ollama.com)로 로컬에서 돌아가는 LLM을 사용해 자연어 요청을 물품 조회·로봇 제어 API 호출로 변환한다. 라즈베리파이5(4GB) 기준으로도 무리 없이 돌아가도록 기본 모델은 3B급 경량 모델을 사용한다.
+
+### 1. Ollama 설치 및 모델 준비
+
+```bash
+# https://ollama.com 에서 설치 후
+ollama pull qwen2.5:3b-instruct
+```
+
+한국어 대신 Meta Llama 계열을 쓰고 싶다면 `ollama pull llama3.2:3b` 후 환경변수 `OLLAMA_MODEL=llama3.2:3b`로 지정하면 된다.
+
+### 2. 환경변수 (선택)
+
+`.env` 파일에 아래 값을 설정할 수 있다. (설정하지 않으면 기본값 사용)
+
+```
+OLLAMA_HOST=http://localhost:11434
+OLLAMA_MODEL=qwen2.5:3b-instruct
+SERVER_URL=http://127.0.0.1:8000
+```
+
+### 3. `/chat` API
+
+서버 실행 후 아래와 같이 호출한다.
+
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"session_id": "test", "message": "boxA 재고 상태 알려줘"}'
+```
+
+- 요청: `{"session_id": "<대화를 구분하는 임의의 문자열>", "message": "<자연어 요청>"}`
+- 응답: `{"reply": "<챗봇의 한국어 답변>"}`
+
+같은 `session_id`로 계속 요청하면 이전 대화 맥락이 유지된다. 휴대폰 앱 등 클라이언트 UI는 아직 없으며, 현재는 API 레벨에서만 동작을 확인할 수 있다.

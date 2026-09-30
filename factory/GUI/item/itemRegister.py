@@ -1,12 +1,17 @@
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, ttk, filedialog
 from PIL import ImageTk
 import qrcode
 import requests
+from pathlib import Path
+import sys
 
-SERVER_URL = "http://taesula.local:8000"
+BASE_DIR = Path(__file__).resolve().parents[2]
+sys.path.append(str(BASE_DIR))
 
-class QRGeneratorApp:
+from config import MAIN_GUI_SIZE, SERVER_URL
+
+class ItemRegisterGUI:
     def __init__(self, root, back_callback=None):
         self.root = root
         self.back_callback = back_callback
@@ -16,19 +21,13 @@ class QRGeneratorApp:
 
         self.qr_image = None
         self.qr_preview = None
+        self.qr_code_text = None
         self.locations = []
 
         self.create_widgets()
         self.load_locations()
 
     def create_widgets(self):
-        title_label = tk.Label(
-            self.root,
-            text="Item 등록 및 QR 생성",
-            font=("Arial", 18, "bold")
-        )
-        title_label.pack(pady=15)
-
         back_frame = tk.Frame(self.root)
         back_frame.pack(fill="x", padx=10, pady=(10,0))
 
@@ -37,6 +36,13 @@ class QRGeneratorApp:
             text="뒤로가기",
             command=self.go_back
         ).pack(side="left")
+        
+        title_label = tk.Label(
+            self.root,
+            text="Item 등록 및 QR 생성",
+            font=("Arial", 18, "bold")
+        )
+        title_label.pack(pady=15)
 
         guide_label = tk.Label(
             self.root,
@@ -88,15 +94,34 @@ class QRGeneratorApp:
         )
         clear_button.grid(row=0, column=1, padx=5)
 
-        self.preview_label = tk.Label(
+        self.preview_frame = tk.Frame(
             self.root,
+            width=260,
+            height=260,
+            bg="white",
+            relief="solid",
+            bd=2
+        )
+        self.preview_frame.pack(pady=20)
+        self.preview_frame.pack_propagate(False)
+
+        self.preview_label = tk.Label(
+            self.preview_frame,
             text="QR 미리보기",
             width=240,
             height=240,
             bg="white",
-            relief="solid"
+            font = ("Arial", 11)
         )
-        self.preview_label.pack(pady=20)
+        self.preview_label.pack(expand=True)
+        self.qr_menu = tk.Menu(self.root, tearoff=0)
+        self.qr_menu.add_command(
+            label="QR 코드 PNG로 저장",
+            command=self.save_qr_image
+        )
+
+        self.preview_label.bind("<Button-3>", self.show_qr_menu)
+        self.preview_frame.bind("<Button-3>", self.show_qr_menu)
 
         self.status_label = tk.Label(
             self.root,
@@ -217,6 +242,8 @@ class QRGeneratorApp:
         )
 
     def generate_qr_image(self, qr_text):
+        self.qr_code_text = qr_text
+
         qr = qrcode.QRCode(
             version=1,
             error_correction=qrcode.constants.ERROR_CORRECT_M,
@@ -237,21 +264,49 @@ class QRGeneratorApp:
 
         self.preview_label.config(image=self.qr_preview, text="")
 
+    def show_qr_menu(self, event):
+        if self.qr_image is None:
+            return
+
+        self.qr_menu.tk_popup(event.x_root, event.y_root)
+
+
+    def save_qr_image(self):
+        if self.qr_image is None:
+            messagebox.showwarning("저장 오류", "먼저 QR 코드를 생성하세요.")
+            return
+
+        safe_name = self.qr_code_text or "qr_code"
+        safe_name = safe_name.replace(" ", "_").replace("/", "_")
+
+        file_path = filedialog.asksaveasfilename(
+            initialfile=f"{safe_name}.png",
+            defaultextension=".png",
+            filetypes=[("PNG files", "*.png")]
+        )
+
+        if not file_path:
+            return
+
+        self.qr_image.save(file_path)
+        messagebox.showinfo("저장 완료", "QR 코드 이미지가 PNG 파일로 저장되었습니다.")
+
     def clear_qr(self):
         self.item_entry.delete(0, tk.END)
         self.qr_image = None
         self.qr_preview = None
+        self.qr_code_text = None
         self.preview_label.config(image="", text="QR 미리보기")
+        self.preview_label.image = None
         self.status_label.config(text="입력값이 초기화되었습니다.", fg="gray")
 
     def go_back(self):
+
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+        self.root.title("Smart Logistics Robot")
+        self.root.geometry(MAIN_GUI_SIZE)
+
         if self.back_callback:
             self.back_callback()
-        else:
-            self.root.destroy()
-
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = QRGeneratorApp(root)
-    root.mainloop()

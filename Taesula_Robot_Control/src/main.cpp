@@ -1,0 +1,586 @@
+#include <Arduino.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+
+// 테스트용 LED 핀
+const int LED_PIN = 2;
+
+// 초음파 센서 핀
+const int TRIG_PIN = 5;
+const int ECHO_PIN = 18;
+
+// ===============================
+// L298N #1: 앞바퀴 모터드라이버
+// OUT1/OUT2 -> 앞왼쪽 모터
+// OUT3/OUT4 -> 앞오른쪽 모터
+// ===============================
+const int FL_IN1 = 16;  // Front Left IN1
+const int FL_IN2 = 27;  // Front Left IN2
+
+const int FR_IN1 = 14;  // Front Right IN3
+const int FR_IN2 = 12;  // Front Right IN4
+
+// ===============================
+// L298N #2: 뒷바퀴 모터드라이버
+// OUT1/OUT2 -> 뒤왼쪽 모터
+// OUT3/OUT4 -> 뒤오른쪽 모터
+// ===============================
+const int RL_IN1 = 32;  // Rear Left IN1
+const int RL_IN2 = 13;  // Rear Left IN2
+
+const int RR_IN1 = 25;  // Rear Right IN3
+const int RR_IN2 = 33;  // Rear Right IN4
+
+// 장애물 판단 기준 거리(cm)
+const int OBSTACLE_DISTANCE = 15;
+
+// 자동 바닥 주행 테스트 모드
+// true  = 전원 켜면 3초 뒤 자동 전진
+// false = 시리얼 명령 입력해야 움직임
+const bool AUTO_TEST_MODE = false;
+
+// 자동 테스트 종류
+// "FORWARD"  = 3초 대기 후 3초 전진 후 정지
+// "BACKWARD" = 3초 대기 후 3초 후진 후 정지
+
+const String AUTO_TEST_TYPE = "RIGHT";
+
+// 자동 주행 시작 전 대기 시간(ms)
+const unsigned long START_DELAY_MS = 3000;
+const unsigned long FORWARD_RUN_MS = 1000;
+const unsigned long TURN_RUN_MS = 1000;
+// 초음파 센서 확인 간격(ms)
+const unsigned long SENSOR_CHECK_INTERVAL_MS = 200;
+const int MOTOR_SPEED = 150; 
+const int TURN_SPEED = 200;   
+// 자동 테스트 상태 변수
+bool autoStarted = false;
+bool autoFinished = false;
+bool autoStoppedByObstacle = false;
+unsigned long startTime = 0;
+unsigned long forwardStartTime = 0;
+unsigned long lastSensorCheckTime = 0;
+
+// 와이파이 연결 변수
+const char* WIFI_SSID = "iptime";
+const char* WIFI_PASSWORD = "";
+
+// 라즈베리파이 IP 변수
+const char* SERVER_URL = "http://taesula.local:8000/test-command";
+
+// 명령 요청 간격
+unsigned long lastCommandRequestTime = 0;
+const unsigned long COMMAND_REQUEST_INTERVAL_MS = 2000;
+
+// 함수 선언
+void moveForward();
+void moveBackward();
+void turnLeft();
+void turnRight();
+void stopMotor();
+void stopMotorPair(int in1, int in2);
+void setMotor(int in1, int in2, bool forward, int speed);
+void handleCommand(char command);
+void runAutoTestMode();
+void runForwardLeftStopTest();
+void runForwardRightStopTest();
+long getDistanceCm();
+bool isObstacleDetected();
+bool isObstacleByDistance(long distance);
+void testObstacleDetection(long testDistance);
+void connectWiFi();
+void requestCommandFromServer();
+String extractDirection(String response);
+void handleServerDirection(String direction);
+void moveForwardStep();
+void moveBackwardStep();
+void turnLeftStep();
+void turnRightStep();
+
+
+void setup() {
+  Serial.begin(115200);
+
+  pinMode(LED_PIN, OUTPUT);
+
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  // 앞바퀴 모터 핀 설정
+  pinMode(FL_IN1, OUTPUT);
+  pinMode(FL_IN2, OUTPUT);
+  pinMode(FR_IN1, OUTPUT);
+  pinMode(FR_IN2, OUTPUT);
+
+  // 뒷바퀴 모터 핀 설정
+  pinMode(RL_IN1, OUTPUT);
+  pinMode(RL_IN2, OUTPUT);
+  pinMode(RR_IN1, OUTPUT);
+  pinMode(RR_IN2, OUTPUT);
+
+  stopMotor();
+
+  delay(500);
+  
+  startTime = millis();
+
+  Serial.println("ESP32 4-Wheel Robot Control Start");
+  Serial.println("Command List:");
+  Serial.println("F = Forward");
+  Serial.println("B = Backward");
+  Serial.println("L = Left");
+  Serial.println("R = Right");
+  Serial.println("S = Stop");
+  Serial.println("D = Real distance check using ultrasonic sensor");
+  Serial.println("T + number = Test obstacle detection with virtual distance");
+  Serial.println("Example: T10, T30");
+
+  if (AUTO_TEST_MODE) {
+    Serial.println("AUTO TEST MODE = ON");
+    Serial.print("AUTO TEST TYPE = ");
+    Serial.println(AUTO_TEST_TYPE);
+    Serial.println("Robot will start after 3 seconds.");
+    Serial.println("Robot will stop automatically after 3 seconds of movement.");
+  } else {
+    Serial.println("AUTO TEST MODE = OFF");
+    Serial.println("Use serial commands to control robot.");
+  }
+  connectWiFi();
+}
+
+void loop() {
+  if (AUTO_TEST_MODE) {
+    runAutoTestMode();
+  }
+  else {
+    if (millis() - lastCommandRequestTime >= COMMAND_REQUEST_INTERVAL_MS) {
+      lastCommandRequestTime = millis();
+      requestCommandFromServer();
+    }
+  }
+
+  // 자동 모드여도 시리얼 명령은 디버깅용으로 받을 수 있게 유지
+  if (Serial.available() > 0) {
+    char command = Serial.read();
+    handleCommand(command);
+  }
+}
+
+void runForwardLeftStopTest() {
+  Serial.println("AUTO TEST START: FORWARD -> LEFT -> STOP");
+
+  // 1초 전진
+  Serial.println("AUTO TEST STEP 1: FORWARD");
+  moveForward();
+  delay(FORWARD_RUN_MS);
+
+  // 1초 좌회전
+  Serial.println("AUTO TEST STEP 2: LEFT");
+  turnLeft();
+  delay(TURN_RUN_MS);
+
+  // 정지
+  Serial.println("AUTO TEST STEP 3: STOP");
+  stopMotor();
+
+  Serial.println("AUTO TEST FINISHED");
+}
+
+void runForwardRightStopTest() {
+  Serial.println("AUTO TEST START: FORWARD -> RIGHT -> STOP");
+
+  Serial.println("AUTO TEST STEP 1: FORWARD");
+  moveForward();
+  delay(1000);
+
+  Serial.println("AUTO TEST STEP 2: RIGHT");
+  turnRight();
+  delay(1000);
+
+  Serial.println("AUTO TEST STEP 3: STOP");
+  stopMotor();
+
+  Serial.println("AUTO TEST FINISHED");
+  autoFinished = true ; 
+}
+// 자동 주행 테스트 함수
+// 전원 켜진 뒤 3초 대기 → 선택된 방향으로 3초 이동 → 4바퀴 전체 정지
+void runAutoTestMode() {
+  // 자동 테스트가 끝났거나 장애물로 정지한 경우 계속 정지 유지
+  if (autoFinished || autoStoppedByObstacle) {
+    stopMotor();
+    return;
+  }
+
+  // 전원 켜자마자 튀어나가지 않도록 3초 대기
+  if (!autoStarted) {
+    if (millis() - startTime < START_DELAY_MS) {
+      stopMotor();
+      return;
+    }
+
+    Serial.print("AUTO TEST START: ");
+    Serial.println(AUTO_TEST_TYPE);
+
+    if (AUTO_TEST_TYPE == "FORWARD") {
+      moveForward();
+    }
+    else if (AUTO_TEST_TYPE == "BACKWARD") {
+      moveBackward();
+    }
+    else if (AUTO_TEST_TYPE == "LEFT") {
+      runForwardLeftStopTest();
+      autoFinished = true;
+      return;
+    }
+    else if (AUTO_TEST_TYPE == "RIGHT"){
+      runForwardRightStopTest();
+      autoFinished = true; 
+      return ; 
+    }
+    else {
+      Serial.println("Invalid AUTO_TEST_TYPE. Robot stopped.");
+      stopMotor();
+      autoFinished = true;
+      return;
+    }
+
+    autoStarted = true;
+    forwardStartTime = millis();
+    lastSensorCheckTime = millis();
+  }
+
+  // 지정 시간 동안 이동 후 자동 정지
+  if (millis() - forwardStartTime >= FORWARD_RUN_MS) {
+    Serial.println("AUTO TEST FINISHED: STOP");
+    stopMotor();
+
+    autoFinished = true;
+    return;
+  }
+
+  // 초음파 센서 미연결 상태에서는 아래 코드를 주석 처리한 상태로 유지
+  /*
+  if (millis() - lastSensorCheckTime >= SENSOR_CHECK_INTERVAL_MS) {
+    lastSensorCheckTime = millis();
+
+    if (isObstacleDetected()) {
+      Serial.println("Obstacle detected during auto test!");
+      Serial.println("Robot Action: STOP");
+      stopMotor();
+
+      autoStoppedByObstacle = true;
+      return;
+    }
+  }
+  */
+}
+
+// 모터 하나 방향 제어 함수
+void setMotor(int in1, int in2, bool forward, int speed) {
+  if (forward) {
+    analogWrite(in1, speed);
+    digitalWrite(in2, LOW);
+  } else {
+    digitalWrite(in1, LOW);
+    analogWrite(in2, speed);
+  }
+}
+
+// 전진
+void moveForward() {
+  Serial.println("Robot Action: FORWARD");
+  digitalWrite(LED_PIN, HIGH);
+
+  setMotor(FL_IN1, FL_IN2, true, MOTOR_SPEED);
+  setMotor(FR_IN1, FR_IN2, true, MOTOR_SPEED);
+  setMotor(RL_IN1, RL_IN2, true, MOTOR_SPEED);
+  setMotor(RR_IN1, RR_IN2, true, MOTOR_SPEED);
+}
+
+// 후진
+void moveBackward() {
+  Serial.println("Robot Action: BACKWARD");
+  digitalWrite(LED_PIN, HIGH);
+
+  setMotor(FL_IN1, FL_IN2, false,MOTOR_SPEED);
+  setMotor(FR_IN1, FR_IN2, false,MOTOR_SPEED);
+  setMotor(RL_IN1, RL_IN2, false,MOTOR_SPEED);
+  setMotor(RR_IN1, RR_IN2, false,MOTOR_SPEED);
+}
+
+// 좌회전
+// 왼쪽 바퀴 후진, 오른쪽 바퀴 전진
+void turnLeft() {
+  Serial.println("Robot Action: LEFT");
+  digitalWrite(LED_PIN, HIGH);
+
+  // Left wheels backward
+  setMotor(FL_IN1, FL_IN2,false, TURN_SPEED);
+  setMotor(RL_IN1, RL_IN2, false, TURN_SPEED);
+
+  // Right wheels forward
+  setMotor(FR_IN1, FR_IN2, true, TURN_SPEED);
+  setMotor(RR_IN1, RR_IN2, true, TURN_SPEED);
+}
+
+// 왼쪽 앞/뒤 바퀴 정지
+void stopMotorPair(int in1, int in2) {
+  analogWrite(in1, 0);
+  analogWrite(in2, 0);
+  digitalWrite(in1, LOW);
+  digitalWrite(in2, LOW);
+}
+
+// 우회전
+// 왼쪽 바퀴 전진, 오른쪽 바퀴 후진
+void turnRight() {
+  Serial.println("Robot Action: RIGHT");
+  digitalWrite(LED_PIN, HIGH);
+
+  // Left wheels forward
+  setMotor(FL_IN1, FL_IN2, true, TURN_SPEED);
+  setMotor(RL_IN1, RL_IN2, true, TURN_SPEED);
+
+  // Right wheels backward
+  setMotor(FR_IN1, FR_IN2, false, TURN_SPEED);
+  setMotor(RR_IN1, RR_IN2, false, TURN_SPEED);
+}
+
+void moveForwardStep() {
+  Serial.println("STEP: FORWARD");
+  moveForward();
+  delay(FORWARD_RUN_MS);
+  stopMotor();
+}
+
+void moveBackwardStep() {
+  Serial.println("STEP: BACKWARD");
+  moveBackward();
+  delay(FORWARD_RUN_MS);
+  stopMotor();
+}
+
+void turnLeftStep() {
+  Serial.println("STEP: LEFT");
+  turnLeft();
+  delay(TURN_RUN_MS);
+  stopMotor();
+}
+
+void turnRightStep() {
+  Serial.println("STEP: RIGHT");
+  turnRight();
+  delay(TURN_RUN_MS);
+  stopMotor();
+}
+// 정지
+void stopMotor() {
+  digitalWrite(LED_PIN, LOW);
+
+  stopMotorPair(FL_IN1, FL_IN2);
+  stopMotorPair(FR_IN1, FR_IN2);
+  stopMotorPair(RL_IN1, RL_IN2);
+  stopMotorPair(RR_IN1, RR_IN2);
+
+}
+
+// 명령 처리 함수
+void handleCommand(char command) {
+  if (command == '\n' || command == '\r' || command == ' ') {
+    return;
+  }
+
+  if (command == 'F' || command == 'f') {
+    if (isObstacleDetected()) {
+      Serial.println("Obstacle detected! Robot stopped.");
+      autoStoppedByObstacle = true;
+      stopMotor();
+    } else {
+      autoStoppedByObstacle = false;
+      moveForward();
+    }
+  }
+  else if (command == 'B' || command == 'b') {
+    autoStoppedByObstacle = false;
+    moveBackward();
+  }
+  else if (command == 'L' || command == 'l') {
+    autoStoppedByObstacle = false;
+    turnLeft();
+  }
+  else if (command == 'R' || command == 'r') {
+    autoStoppedByObstacle = false;
+    turnRight();
+  }
+  else if (command == 'S' || command == 's') {
+    autoStoppedByObstacle = true;
+    stopMotor();
+    Serial.println("Robot Action: STOP");
+  }
+  else if (command == 'D' || command == 'd') {
+    getDistanceCm();
+  }
+  else if (command == 'T' || command == 't') {
+    delay(50);
+
+    long testDistance = Serial.parseInt();
+
+    if (testDistance > 0) {
+      testObstacleDetection(testDistance);
+    } else {
+      Serial.println("Invalid test distance. Example: T10 or T30");
+    }
+  }
+  else {
+    Serial.println("Unknown command");
+  }
+}
+
+// 실제 초음파 센서 거리 측정 함수
+long getDistanceCm() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  long duration = pulseIn(ECHO_PIN, HIGH, 30000);
+
+  if (duration == 0) {
+    Serial.println("Distance: No echo");
+    return -1;
+  }
+
+  long distance = duration * 0.034 / 2;
+
+  Serial.print("Distance: ");
+  Serial.print(distance);
+  Serial.println(" cm");
+
+  return distance;
+}
+
+// 실제 센서값으로 장애물 감지
+bool isObstacleDetected() {
+  long distance = getDistanceCm();
+  return isObstacleByDistance(distance);
+}
+
+// 거리값 기준 장애물 판단
+bool isObstacleByDistance(long distance) {
+  return distance > 0 && distance <= OBSTACLE_DISTANCE;
+}
+
+// 가상 거리값 테스트 함수
+void testObstacleDetection(long testDistance) {
+  Serial.print("Test Distance: ");
+  Serial.print(testDistance);
+  Serial.println(" cm");
+
+  if (isObstacleByDistance(testDistance)) {
+    Serial.println("Obstacle detected in test data!");
+    stopMotor();
+  } else {
+    Serial.println("No obstacle in test data.");
+  }
+}
+
+void connectWiFi() {
+  Serial.print("Connecting to WiFi: ");
+  Serial.println(WIFI_SSID);
+
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  int retryCount = 0;
+
+  while (WiFi.status() != WL_CONNECTED && retryCount < 30) {
+    delay(500);
+    Serial.print(".");
+    retryCount++;
+  }
+
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("WiFi connected");
+    Serial.print("ESP32 IP: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("WiFi connection failed");
+  }
+}
+
+void requestCommandFromServer() {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi disconnected. Reconnecting...");
+    connectWiFi();
+    return;
+  }
+
+  HTTPClient http;
+  http.begin(SERVER_URL);
+
+  int httpCode = http.GET();
+
+  if (httpCode == 200) {
+    String response = http.getString();
+
+    Serial.print("Server response: ");
+    Serial.println(response);
+
+    String direction = extractDirection(response);
+    handleServerDirection(direction);
+  } else {
+    Serial.print("HTTP request failed. Code: ");
+    Serial.println(httpCode);
+  }
+
+  http.end();
+}
+
+String extractDirection(String response) {
+  String key = "\"direction\":\"";
+  int startIndex = response.indexOf(key);
+
+  if (startIndex == -1) {
+    return "";
+  }
+
+  startIndex += key.length();
+
+  int endIndex = response.indexOf("\"", startIndex);
+
+  if (endIndex == -1) {
+    return "";
+  }
+
+  return response.substring(startIndex, endIndex);
+}
+
+void handleServerDirection(String direction) {
+  direction.trim();
+
+  if (direction == "forward") {
+      moveForwardStep();
+    }
+  
+  else if (direction == "backward") {
+    moveBackwardStep();
+  }
+  else if (direction == "left") {
+    turnLeftStep();
+  }
+  else if (direction == "right") {
+    turnRightStep();
+  }
+  else if (direction == "stop") {
+    stopMotor();
+    Serial.println("Robot Action: STOP");
+  }
+  else {
+    Serial.print("Unknown server direction: ");
+    Serial.println(direction);
+  }
+}
