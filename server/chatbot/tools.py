@@ -32,8 +32,8 @@ def list_items() -> dict:
             "status": item["status"],
             "destination": {
                 "zone_name": location["zone_name"],
-                "x": location["x"],
-                "y": location["y"],
+                # "x": location["x"],
+                # "y": location["y"],
             } if location else None,
         })
 
