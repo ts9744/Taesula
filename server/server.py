@@ -17,8 +17,7 @@ from pydantic import BaseModel
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 
-DB_PATH = BASE_DIR / "SIDA_system.db"
-
+from server.database import get_db, load_grid_from_db
 from algorithm.astar import a_star
 from camera.camera import get_camera, generate_camera_stream
 from chatbot import agent as chat_agent
@@ -32,31 +31,6 @@ app = FastAPI(
     description="Raspberry Pi와 ESP32 간 로봇 명령 및 상태 데이터 통신을 위한 API 서버",
     version="1.0.0"
 )
-
-# =========================
-# DATABASE UTILS
-# =========================
-
-def get_db():
-    return sqlite3.connect(DB_PATH)
-
-def load_grid_from_db():
-    conn = get_db()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT pathfinding_grid
-        FROM grid_map
-        WHERE id = 1
-    """)
-
-    row = cursor.fetchone()
-    conn.close()
-
-    if not row or row[0] is None:
-        return None
-
-    return json.loads(row[0])
 
 # =========================
 # ROBOT COMMAND STATE & PATH UTILS
