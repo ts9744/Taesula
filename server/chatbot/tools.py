@@ -14,9 +14,30 @@ def get_item_info(qr_code: str) -> dict:
 
 
 def list_items() -> dict:
-    resp = requests.get(f"{SERVER_BASE_URL}/items", timeout=REQUEST_TIMEOUT)
-    resp.raise_for_status()
-    return {"items": resp.json()}
+    items_resp = requests.get(f"{SERVER_BASE_URL}/items", timeout=REQUEST_TIMEOUT)
+    items_resp.raise_for_status()
+    items = items_resp.json()
+
+    locations_resp = requests.get(f"{SERVER_BASE_URL}/locations", timeout=REQUEST_TIMEOUT)
+    locations_resp.raise_for_status()
+    locations_by_id = {loc["id"]: loc for loc in locations_resp.json()}
+
+    enriched = []
+    for item in items:
+        location = locations_by_id.get(item.get("destination_id"))
+        enriched.append({
+            "id": item["id"],
+            "name": item["name"],
+            "qr_code": item["qr_code"],
+            "status": item["status"],
+            "destination": {
+                "zone_name": location["zone_name"],
+                "x": location["x"],
+                "y": location["y"],
+            } if location else None,
+        })
+
+    return {"items": enriched}
 
 
 def get_robot_status() -> dict:
@@ -54,11 +75,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_item_info",
-            "description": (
-                "QR 코드로 물품 하나의 상태와 목적지 위치(구역 이름 zone_name, 좌표 x/y 포함)를 조회한다. "
-                "물품의 QR 코드를 이미 알고 있다면(예: 'boxA') list_items 대신 반드시 이 도구를 사용할 것 — "
-                "list_items는 구역 이름/좌표를 포함하지 않는다."
-            ),
+            "description": "QR 코드로 물품 하나의 상태와 목적지 위치(구역 이름 zone_name, 좌표 x/y 포함)를 조회한다.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -72,11 +89,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "list_items",
-            "description": (
-                "등록된 모든 물품의 목록과 상태를 조회한다. 목적지 위치의 구역 이름(zone_name)이나 좌표는 "
-                "포함되지 않고 destination_id(위치 테이블의 내부 id 번호)만 포함되므로, 이 id를 구역 이름처럼 "
-                "부르거나 추측해서 답하면 안 된다. 특정 물품의 구역 이름/좌표가 필요하면 get_item_info를 사용할 것."
-            ),
+            "description": "등록된 모든 물품의 목록과 상태, 목적지 위치(구역 이름 zone_name, 좌표 x/y 포함)를 조회한다.",
             "parameters": {"type": "object", "properties": {}},
         },
     },
