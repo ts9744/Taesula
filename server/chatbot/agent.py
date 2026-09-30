@@ -1,5 +1,7 @@
 import json
+import logging
 import os
+import time
 
 from ollama import Client
 
@@ -8,6 +10,9 @@ from . import sessions, tools
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 MODEL = os.environ.get("OLLAMA_MODEL", "qwen2.5:3b-instruct")
 MAX_TOOL_ITERATIONS = 6
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 SYSTEM_PROMPT = """당신은 물류 로봇 Taesula의 어시스턴트입니다.
 창고 안 물품 재고를 조회하거나, 로봇을 자연어 명령으로 제어하는 역할을 합니다.
@@ -61,20 +66,29 @@ def run_agent_turn(session_id: str, user_message: str) -> str:
     history.append({"role": "user", "content": user_message})
 
     reply = "요청을 처리하지 못했습니다. 다시 시도해주세요."
+    turn_start = time.perf_counter()
 
-    for _ in range(MAX_TOOL_ITERATIONS):
+    for iteration in range(MAX_TOOL_ITERATIONS):
+        call_start = time.perf_counter()
         response = _client.chat(
             model=MODEL,
             messages=[{"role": "system", "content": SYSTEM_PROMPT}] + history,
             tools=tools.TOOL_DEFINITIONS,
             options={"temperature": 0},
         )
+        call_elapsed = time.perf_counter() - call_start
+        logger.info("ollama chat call #%d took %.2fs", iteration + 1, call_elapsed)
+
         message = response.message
 
         if message.tool_calls:
             history.append(_message_to_dict(message))
             for call in message.tool_calls:
+                tool_start = time.perf_counter()
                 result = tools.dispatch(call.function.name, dict(call.function.arguments))
+                logger.info(
+                    "tool %s took %.2fs", call.function.name, time.perf_counter() - tool_start
+                )
                 history.append({
                     "role": "tool",
                     "content": json.dumps(result, ensure_ascii=False),
@@ -89,5 +103,6 @@ def run_agent_turn(session_id: str, user_message: str) -> str:
         # 도구 호출도 텍스트도 없는 빈 응답(로컬 소형 모델에서 가끔 발생) — 이 턴은
         # 히스토리에 남기지 않고 그대로 재시도한다.
 
+    logger.info("run_agent_turn total: %.2fs", time.perf_counter() - turn_start)
     sessions.save_history(session_id, history)
     return reply
