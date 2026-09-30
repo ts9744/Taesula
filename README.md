@@ -290,3 +290,41 @@ pip install -r requirements.txt
 sudo apt install -y python3-picamera2 python3-opencv
 ```
 python3-picamera2는 라즈베리파이 카메라 모듈을 제어하기 위한 라이브러리이며, python3-opencv는 카메라 프레임 처리 및 QR 코드 인식에 사용된다.
+
+## 🤖 챗봇(자연어 제어 / 재고 조회) 설정
+
+챗봇은 [Ollama](https://ollama.com)로 로컬에서 돌아가는 LLM을 사용해 자연어 요청을 물품 조회·로봇 제어 API 호출로 변환한다. 라즈베리파이5(4GB) 기준으로도 무리 없이 돌아가도록 기본 모델은 3B급 경량 모델을 사용한다.
+
+### 1. Ollama 설치 및 모델 준비
+
+```bash
+# https://ollama.com 에서 설치 후
+ollama pull qwen2.5:3b-instruct
+```
+
+한국어 대신 Meta Llama 계열을 쓰고 싶다면 `ollama pull llama3.2:3b` 후 환경변수 `OLLAMA_MODEL=llama3.2:3b`로 지정하면 된다.
+
+### 2. 환경변수 (선택)
+
+`.env` 파일에 아래 값을 설정할 수 있다. (설정하지 않으면 기본값 사용)
+
+```
+OLLAMA_HOST=http://localhost:11434
+OLLAMA_MODEL=qwen2.5:3b-instruct
+SERVER_URL=http://127.0.0.1:8000
+```
+
+### 3. `/chat` API
+
+서버 실행 후 아래와 같이 호출한다.
+
+```bash
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"session_id": "test", "message": "boxA 재고 상태 알려줘"}'
+```
+
+- 요청: `{"session_id": "<대화를 구분하는 임의의 문자열>", "message": "<자연어 요청>"}`
+- 응답: `{"reply": "<챗봇의 한국어 답변>"}`
+
+같은 `session_id`로 계속 요청하면 이전 대화 맥락이 유지된다. 휴대폰 앱 등 클라이언트 UI는 아직 없으며, 현재는 API 레벨에서만 동작을 확인할 수 있다.

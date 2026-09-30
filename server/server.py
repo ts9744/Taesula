@@ -21,6 +21,7 @@ DB_PATH = BASE_DIR / "SIDA_system.db"
 
 from algorithm.astar import a_star
 from camera.camera import get_camera, generate_camera_stream
+from chatbot import agent as chat_agent
 
 # =========================
 # FASTAPI APP
@@ -1016,6 +1017,19 @@ def camera_stream():
         generate_camera_stream(),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
+
+# =========================
+# CHATBOT API
+# =========================
+
+class ChatRequest(BaseModel):
+    session_id: str
+    message: str
+
+@app.post("/chat")
+def chat(request: ChatRequest):
+    reply = chat_agent.run_agent_turn(request.session_id, request.message)
+    return {"reply": reply}
 
 # =========================
 # SERVER RUNNER
