@@ -18,11 +18,10 @@ sys.path.append(str(BASE_DIR))
 
 from server.database import get_db, load_grid_from_db
 from server.schemas.request_models import (
-    CommandRequest,
-    PathRequest,
     TestCommandRequest,
     GridMapRequest,
 )
+from server.routers import command as command_router
 
 from algorithm.astar import a_star
 from camera.camera import get_camera, generate_camera_stream
@@ -38,12 +37,12 @@ app = FastAPI(
     version="1.0.0"
 )
 
+app.include_router(command_router.router)
+
 # =========================
 # ROBOT COMMAND STATE & PATH UTILS
 # =========================
 
-current_command = "stop"
-current_path = []
 test_command = "stop"
 test_command_ready = False
 
@@ -158,13 +157,9 @@ def get_status():
 
     return {
         "robot_status": robot_db_status,
-        "current_command": current_command,
-        "current_path": current_path
+        "current_command": command_router.current_command,
+        "current_path": command_router.current_path
     }
-
-@app.get("/command")
-def get_command():
-    return {"direction": current_command}
 
 @app.post("/test-command")
 def set_test_command(request: TestCommandRequest):
@@ -201,48 +196,6 @@ def get_test_command():
         "direction": command_to_send,
         "source": "test-command",
         "message": "test command consumed"
-    }
-
-@app.get("/next-command")
-def get_next_command():
-    global current_command, current_path
-
-    if not current_path:
-        current_command = "stop"
-        return {
-            "direction": "stop",
-            "message": "path is empty",
-            "remaining_path": current_path
-        }
-
-    current_command = current_path.pop(0)
-
-    return {
-        "direction": current_command,
-        "remaining_path": current_path
-    }
-
-@app.post("/command")
-def set_command(command: CommandRequest):
-    global current_command
-
-    current_command = command.direction
-
-    return {
-        "message": "command updated",
-        "direction": current_command
-    }
-
-
-@app.post("/path")
-def set_path(path_data: PathRequest):
-    global current_path
-
-    current_path = path_data.path
-
-    return {
-        "message": "path updated",
-        "path": current_path
     }
 
 # =========================
@@ -454,7 +407,6 @@ def delete_item(qr_code: str):
 
 @app.get("/route/{qr_code}")
 def get_route_by_qr(qr_code: str):
-    global current_path
 
     conn = get_db()
     cursor = conn.cursor()
@@ -572,7 +524,7 @@ def get_route_by_qr(qr_code: str):
     command_path = path_to_commands(path, start_direction)
 
     # 9. /next-command API에서 순차적으로 가져갈 수 있도록 명령 경로 저장
-    current_path = command_path.copy()
+    command_router.current_path = command_path.copy()
 
     # 10. item, robot, destination, path 정보를 응답
     return {
