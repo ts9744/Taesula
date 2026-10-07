@@ -1,4 +1,3 @@
-from typing import Literal
 from pathlib import Path
 import sys
 import json
@@ -18,6 +17,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 
 from server.database import get_db, load_grid_from_db
+from server.schemas.request_models import (
+    CommandRequest,
+    PathRequest,
+    TestCommandRequest,
+    GridMapRequest,
+)
+
 from algorithm.astar import a_star
 from camera.camera import get_camera, generate_camera_stream
 from chatbot import agent as chat_agent
@@ -40,11 +46,6 @@ current_command = "stop"
 current_path = []
 test_command = "stop"
 test_command_ready = False
-
-TestCommand = Literal["forward", "backward", "left", "right", "stop"]
-
-class TestCommandRequest(BaseModel):
-    command: TestCommand
 
 DIRECTIONS = ["north", "east", "south", "west"]
 
@@ -121,23 +122,6 @@ def direction_to_move_command(target_direction, start_direction):
 
     return "stop"
 
-# =========================
-# REQUEST MODELS
-# =========================
-
-class CommandRequest(BaseModel):
-    direction: Literal["forward", "backward", "left", "right", "stop"]
-
-
-class PathRequest(BaseModel):
-    path: list[Literal["forward", "backward", "left", "right", "stop"]]
-
-class GridMapRequest(BaseModel):
-    rows: int
-    cols: int
-    raw_grid: list[list[int]]
-    pathfinding_grid: list[list[int]]
-      
 # =========================
 # BASIC STATUS & COMMAND API
 # =========================
