@@ -15,6 +15,8 @@ const ICONS = {
   play: '<path d="M8 5v14l11-7z"/>',
   stop: '<rect x="6" y="6" width="12" height="12" rx="1"/>',
   robot: '<rect x="5" y="8" width="14" height="10" rx="2"/><path d="M12 4v4M9 13h.01M15 13h.01"/><path d="M3 12v3M21 12v3"/>',
+  trash: '<path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/><path d="M9 7V4h6v3"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   db: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.66 3.13 3 7 3s7-1.34 7-3V6"/><path d="M5 12c0 1.66 3.13 3 7 3s7-1.34 7-3"/>',
   search: '<circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
@@ -179,6 +181,34 @@ export function openSheet({ title, sub, body, label, onClose }) {
   const first = sheet.querySelector('input, select, button');
   if (first) setTimeout(() => first.focus(), 50);
   return close;
+}
+
+// ---------- 예/아니오 확인 창 ----------
+// 사용: if (await confirmDialog({ title: '정말 삭제하시겠습니까?' })) { ... }
+export function confirmDialog({ title, message, yes = '예', no = '아니오', danger = true }) {
+  return new Promise((resolve) => {
+    const prevFocus = document.activeElement;
+    const scrim = h('div', { class: 'scrim', style: { zIndex: 22 } }); // 수정 시트 위에도 뜨도록
+    const noBtn = btn(no, { kind: 'secondary' });
+    const yesBtn = btn(yes, { kind: danger ? 'danger-fill' : 'primary' });
+    const box = h('div', { class: 'dialog', role: 'alertdialog', 'aria-modal': 'true', 'aria-label': title },
+      h('h2', null, title),
+      message ? h('p', null, message) : null,
+      h('div', { class: 'row' }, noBtn, yesBtn));
+    const done = (answer) => {
+      scrim.remove(); box.remove();
+      document.removeEventListener('keydown', onKey);
+      if (prevFocus && prevFocus.focus) prevFocus.focus();
+      resolve(answer);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') done(false); };
+    noBtn.addEventListener('click', () => done(false));
+    yesBtn.addEventListener('click', () => done(true));
+    scrim.addEventListener('click', () => done(false));
+    document.addEventListener('keydown', onKey);
+    document.body.append(scrim, box);
+    setTimeout(() => noBtn.focus(), 30); // 실수로 Enter를 눌러도 삭제되지 않게 '아니오'에 초점
+  });
 }
 
 export function field(labelText, control) {
