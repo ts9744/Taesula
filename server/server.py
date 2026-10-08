@@ -33,6 +33,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# 모바일 앱 제공: http://<서버 IP>:8000/app/
+from mobile_app import setup_mobile
+setup_mobile(app, BASE_DIR)
+
 # =========================
 # DATABASE UTILS
 # =========================
