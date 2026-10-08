@@ -55,14 +55,60 @@ export default {
     // --- 격자
     const gridBox = h('div', { class: 'grid-map edit' });
     const wrap = h('div', { class: 'grid-wrap', style: { overflowX: 'auto' } }, gridBox);
+    // 장애물·이동 가능 모드: 누른 채로 끌어서 여러 칸을 한 번에 칠한다.
+    // 처음 누른 칸이 장애물이면 끄는 동안 지우고, 아니면 끄는 동안 장애물로 칠한다.
+    let paint = null; // { value, visited:Set }
+    const cellAt = (x, y) => {
+      const el = document.elementFromPoint(x, y);
+      const cell = el && el.closest ? el.closest('.cell') : null;
+      return cell && gridBox.contains(cell) ? cell : null;
+    };
+    gridBox.addEventListener('pointerdown', (e) => {
+      if (mode !== 'obstacle' && mode !== 'free') return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      const cell = e.target.closest('.cell');
+      if (!cell) return;
+      e.preventDefault();
+      const r = Number(cell.dataset.r), c = Number(cell.dataset.c);
+      if (grid[r][c] === 3) { toast('목적지로 등록된 칸은 바꿀 수 없습니다. (목적지는 서버 목록에서 관리됩니다)', 'error'); return; }
+      const value = mode === 'free' ? 0 : (grid[r][c] === 1 ? 0 : 1);
+      paint = { value, visited: new Set(), last: [r, c] };
+      paintCell(r, c);
+    });
+    gridBox.addEventListener('pointermove', (e) => {
+      if (!paint) return;
+      const cell = cellAt(e.clientX, e.clientY);
+      if (!cell) return;
+      const r = Number(cell.dataset.r), c = Number(cell.dataset.c);
+      // 빠르게 끌어서 중간 칸을 건너뛰어도 빠짐없이 칠하도록 이전 칸부터 직선으로 채운다
+      const [r0, c0] = paint.last;
+      const steps = Math.max(Math.abs(r - r0), Math.abs(c - c0));
+      for (let i = 1; i <= steps; i++) {
+        paintCell(Math.round(r0 + ((r - r0) * i) / steps), Math.round(c0 + ((c - c0) * i) / steps));
+      }
+      paint.last = [r, c];
+    });
+    const endPaint = () => {
+      if (!paint) return;
+      paint = null;
+      drawStatus();
+    };
+    window.addEventListener('pointerup', endPaint);
+    window.addEventListener('pointercancel', endPaint);
+
+    // 클릭: 시작점·목적지 모드, 그리고 키보드(Enter/Space)로 칸을 누른 경우
     gridBox.addEventListener('click', (e) => {
       const cell = e.target.closest('.cell');
-      if (cell) onCell(Number(cell.dataset.r), Number(cell.dataset.c));
+      if (!cell) return;
+      const isKeyboard = e.detail === 0;
+      if ((mode === 'obstacle' || mode === 'free') && !isKeyboard) return; // 마우스·터치는 pointerdown에서 처리됨
+      onCell(Number(cell.dataset.r), Number(cell.dataset.c));
     });
 
     const modeText = h('strong');
+    const modeHint = h('span');
     const locCount = h('span');
-    const hint = h('div', { class: 'hint' }, h('span', null, '모드: ', modeText, ' · 칸을 탭하세요'), locCount);
+    const hint = h('div', { class: 'hint' }, h('span', null, '모드: ', modeText, modeHint), locCount);
     const updated = h('div', { class: 'label-sm', style: { fontWeight: 500, textAlign: 'center' } });
 
     const saveBtn = btn('DB 저장', { kind: 'primary', icon: 'db' });
@@ -82,6 +128,43 @@ export default {
       mode = m;
       modeBtns.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
       modeText.textContent = MODES.find((x) => x.id === m).label;
+      modeHint.textContent = {
+        obstacle: ' · 끌어서 여러 칸 · 다시 탭하면 지워집니다',
+        free: ' · 끌어서 여러 칸을 지웁니다',
+        start: ' · 다시 탭하면 해제됩니다',
+        location: ' · 칸을 탭하세요',
+      }[m];
+      // 칠하는 모드에서는 격자 위 드래그가 화면 스크롤이 되지 않도록 막는다
+      gridBox.style.touchAction = (m === 'obstacle' || m === 'free') ? 'none' : '';
+    }
+
+    function makeCell(r, c) {
+      const cell = h('button', { type: 'button' }, h('span', { style: { overflow: 'hidden', textOverflow: 'clip', whiteSpace: 'nowrap', maxWidth: '100%' } }));
+      cell.dataset.r = r; cell.dataset.c = c;
+      styleCell(cell, r, c);
+      return cell;
+    }
+
+    function styleCell(cell, r, c) {
+      const v = grid[r][c];
+      const label = v === 2 ? 'S' : v === 3 ? (labels[`${r},${c}`] || '') : '';
+      cell.className = `cell${v ? ` v${v}` : ''}`;
+      cell.setAttribute('aria-label', `(${c + 1}, ${r + 1}) ${VALUE_NAME[v] || ''}${label && v === 3 ? ` ${label}` : ''}`);
+      cell.firstChild.textContent = label;
+    }
+
+    // 드래그 중에는 격자 전체를 다시 그리지 않고 해당 칸만 바꾼다
+    function paintCell(r, c) {
+      const key = `${r},${c}`;
+      if (paint.visited.has(key)) return;
+      paint.visited.add(key);
+      const v = grid[r][c];
+      if (v === 3 || v === paint.value) return;
+      if (start && start[0] === r && start[1] === c) start = null;
+      grid[r][c] = paint.value;
+      dirty = true;
+      const cell = gridBox.children[r * cols + c];
+      if (cell) styleCell(cell, r, c);
     }
 
     function draw() {
@@ -89,17 +172,13 @@ export default {
       gridBox.style.minWidth = `${cols * 28 + (cols - 1) * 3}px`;
       const cells = [];
       for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          const v = grid[r][c];
-          const label = v === 2 ? 'S' : v === 3 ? (labels[`${r},${c}`] || '') : '';
-          const cell = h('button', { type: 'button', class: `cell${v ? ` v${v}` : ''}`,
-            'aria-label': `(${c + 1}, ${r + 1}) ${VALUE_NAME[v] || ''}${label && v === 3 ? ` ${label}` : ''}` },
-          h('span', { style: { overflow: 'hidden', textOverflow: 'clip', whiteSpace: 'nowrap', maxWidth: '100%' } }, label));
-          cell.dataset.r = r; cell.dataset.c = c;
-          cells.push(cell);
-        }
+        for (let c = 0; c < cols; c++) cells.push(makeCell(r, c));
       }
       gridBox.replaceChildren(...cells);
+      drawStatus();
+    }
+
+    function drawStatus() {
       const n = Object.keys(labels).length;
       locCount.textContent = `목적지 ${n}곳`;
       rowsIn.value = rows; colsIn.value = cols;
@@ -110,14 +189,24 @@ export default {
       const v = grid[r][c];
       if (mode === 'location') { registerLocation(r, c); return; }
       if (v === 3) { toast('목적지로 등록된 칸은 바꿀 수 없습니다. (목적지는 서버 목록에서 관리됩니다)', 'error'); return; }
-      if (mode === 'free' || mode === 'obstacle') {
+      if (mode === 'obstacle') {
+        // 장애물 모드: 빈 칸은 장애물로, 이미 장애물인 칸은 다시 누르면 지워진다
         if (start && start[0] === r && start[1] === c) start = null;
-        grid[r][c] = mode === 'free' ? 0 : 1;
+        grid[r][c] = v === 1 ? 0 : 1;
+      } else if (mode === 'free') {
+        if (start && start[0] === r && start[1] === c) start = null;
+        grid[r][c] = 0;
       } else if (mode === 'start') {
-        if (v === 1) { toast('장애물 칸에는 시작점을 둘 수 없습니다.', 'error'); return; }
-        if (start) grid[start[0]][start[1]] = 0;
-        start = [r, c];
-        grid[r][c] = 2;
+        if (start && start[0] === r && start[1] === c) {
+          // 이미 시작점인 칸을 다시 누르면 해제
+          grid[r][c] = 0;
+          start = null;
+        } else {
+          if (v === 1) { toast('장애물 칸에는 시작점을 둘 수 없습니다.', 'error'); return; }
+          if (start) grid[start[0]][start[1]] = 0;
+          start = [r, c];
+          grid[r][c] = 2;
+        }
       }
       dirty = true;
       draw();
@@ -208,6 +297,8 @@ export default {
     return () => {
       alive = false;
       window.removeEventListener('beforeunload', beforeUnload);
+      window.removeEventListener('pointerup', endPaint);
+      window.removeEventListener('pointercancel', endPaint);
       document.querySelectorAll('.scrim, .sheet').forEach((n) => n.remove());
     };
   },
