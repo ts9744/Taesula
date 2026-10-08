@@ -303,6 +303,42 @@ details.manual[open] summary { margin-bottom: 10px; }
 .list-item .id { font-family: var(--mono); font-size: 12px; color: var(--muted); width: 22px; flex-shrink: 0; }
 .list-item[aria-expanded="true"] { background: var(--accent-soft); border: 2px solid var(--accent); padding: 11px 13px; }
 
+/* 선택 삭제 */
+.list-tools { display: flex; align-items: center; gap: 2px; }
+.trash-btn {
+  position: relative; width: 44px; height: 44px; border-radius: 10px; border: 1px solid transparent;
+  background: transparent; color: var(--muted); display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.trash-btn[aria-pressed="true"] { background: #FDE2E1; color: var(--danger); border-color: var(--danger-line); }
+.trash-btn .count {
+  position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
+  background: var(--danger); color: #FFFFFF; font-size: 11px; font-weight: 700; line-height: 20px; text-align: center;
+}
+.list.selecting { touch-action: none; user-select: none; -webkit-user-select: none; }
+.list-item .check {
+  width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line); background: #FFFFFF;
+  flex-shrink: 0; display: none; align-items: center; justify-content: center; color: #FFFFFF;
+}
+.list-item .check svg { visibility: hidden; }
+.list.selecting .list-item .check { display: flex; }
+.list.selecting .list-item .id { display: none; }
+.list-item[aria-checked="true"] { background: #FFF5F4; border-color: var(--danger-line); }
+.list-item[aria-checked="true"] .check { background: var(--danger); border-color: var(--danger); }
+.list-item[aria-checked="true"] .check svg { visibility: visible; }
+.select-bar { display: flex; align-items: center; gap: 8px; }
+.select-bar .text-btn { height: 36px; font-size: 14px; }
+
+/* 예/아니오 확인 창 */
+.dialog {
+  position: fixed; z-index: 23; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: calc(100% - 48px); max-width: 360px; background: #FFFFFF; border-radius: 16px;
+  padding: 22px 20px 18px; display: flex; flex-direction: column; gap: 10px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.22); animation: fade .15s ease-out;
+}
+.dialog h2 { margin: 0; font-size: 18px; font-weight: 700; }
+.dialog p { margin: 0 0 8px; font-size: 14px; line-height: 1.55; color: var(--muted); word-break: keep-all; }
+.btn-danger-fill { background: var(--danger); color: #FFFFFF; border-color: var(--danger); }
+
 /* ---------- 시트 · 토스트 ---------- */
 .scrim { position: fixed; inset: 0; background: rgba(22,24,27,.45); z-index: 20; animation: fade .15s ease-out; }
 .sheet {
