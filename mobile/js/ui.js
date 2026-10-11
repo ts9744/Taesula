@@ -39,6 +39,74 @@ export function icon(name, size = 20, strokeWidth = 1.9) {
   return svg;
 }
 
+// ---------- SIDA 캐릭터 (디자인 캔버스의 돔 카트 로봇) ----------
+// 몸통·얼굴은 이동 중과 대기 모습에서 공유한다
+const SIDA_BODY =
+  '<rect x="36" y="80" width="64" height="36" rx="12" fill="#FFFFFF" stroke="#22292E" stroke-width="3"/>' +
+  '<path d="M30 84A38 38 0 0 1 106 84Z" fill="#FFFFFF" stroke="#22292E" stroke-width="3"/>' +
+  '<rect x="42" y="56" width="52" height="24" rx="12" fill="#D7F0EF" stroke="#22292E" stroke-width="2.5"/>' +
+  '<circle cx="57" cy="68" r="6" fill="#22292E"/><circle cx="79" cy="68" r="6" fill="#22292E"/>' +
+  '<circle cx="59" cy="65.5" r="2" fill="#FFFFFF"/><circle cx="81" cy="65.5" r="2" fill="#FFFFFF"/>' +
+  '<path d="M68 42V34" stroke="#22292E" stroke-width="3"/>' +
+  '<circle cx="68" cy="30" r="4.5" fill="LAMP" stroke="#22292E" stroke-width="2.5"/>' +
+  '<rect x="56" y="92" width="24" height="8" rx="4" fill="#7FB9BC"/>';
+
+// 상태별 머리 위 표시등 색
+const SIDA_LAMP = { moving: '#7FD4D6', idle: '#7FD4D6', stopped: '#F2C14E', obstacle_detected: '#F08A7A', error: '#F08A7A' };
+
+// state: 'moving'이면 카트에 탄 모습, 그 밖에는 카트에서 내린 모습
+export function sida(state, size = 200) {
+  const moving = state === 'moving';
+  const lamp = SIDA_LAMP[state] || '#A7B4B8';
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', moving ? '카트를 타고 이동 중인 SIDA' : 'SIDA');
+  const body = SIDA_BODY.replace('LAMP', lamp);
+  if (moving) {
+    svg.setAttribute('viewBox', '0 18 160 140');
+    svg.setAttribute('width', size);
+    svg.setAttribute('height', Math.round(size * 140 / 160));
+    svg.innerHTML =
+      '<ellipse cx="80" cy="152" rx="54" ry="5" fill="#22393C"/>' +
+      '<path d="M2 104H13M4 116H15M2 128H11" stroke="#7FB8DE" stroke-width="3.5"/>' +
+      '<g class="bob">' +
+      '<circle cx="44" cy="140" r="10" fill="#3A474B"/><circle cx="116" cy="140" r="10" fill="#3A474B"/>' +
+      '<circle cx="44" cy="140" r="3.5" fill="#A7B4B8"/><circle cx="116" cy="140" r="3.5" fill="#A7B4B8"/>' +
+      '<rect x="22" y="112" width="116" height="26" rx="12" fill="#BFE3E1" stroke="#22292E" stroke-width="3"/>' +
+      '<path d="M34 125H126" stroke="#7FB9BC" stroke-width="3"/>' +
+      '<rect x="104" y="92" width="26" height="22" rx="3" fill="#E6D6B8" stroke="#22292E" stroke-width="2.5"/>' +
+      '<path d="M117 92V114" stroke="#D2BC96" stroke-width="4"/>' + body + '</g>';
+  } else {
+    svg.setAttribute('viewBox', '10 14 140 124');
+    svg.setAttribute('width', Math.round(size * 0.82));
+    svg.setAttribute('height', Math.round(size * 0.82 * 124 / 140));
+    svg.innerHTML = '<ellipse cx="80" cy="129" rx="40" ry="5" fill="#22393C"/><g transform="translate(12 8)">' + body + '</g>';
+  }
+  return svg;
+}
+
+// 앱 상단 로고용 SIDA 얼굴
+export function sidaFace(size = 30) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('width', size);
+  svg.setAttribute('height', size);
+  svg.setAttribute('viewBox', '0 0 120 120');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.innerHTML =
+    '<path d="M60 44V36" stroke="#22292E" stroke-width="5" stroke-linecap="round"/>' +
+    '<circle cx="60" cy="30" r="7" fill="#7FD4D6" stroke="#22292E" stroke-width="4"/>' +
+    '<rect x="28" y="88" width="64" height="24" rx="9" fill="#FFFFFF" stroke="#22292E" stroke-width="5"/>' +
+    '<path d="M14 92A46 46 0 0 1 106 92Z" fill="#FFFFFF" stroke="#22292E" stroke-width="5" stroke-linejoin="round"/>' +
+    '<rect x="30" y="60" width="60" height="28" rx="14" fill="#D7F0EF" stroke="#22292E" stroke-width="4"/>' +
+    '<circle cx="49" cy="74" r="7" fill="#22292E"/><circle cx="71" cy="74" r="7" fill="#22292E"/>' +
+    '<circle cx="51.5" cy="71.5" r="2.4" fill="#FFFFFF"/><circle cx="73.5" cy="71.5" r="2.4" fill="#FFFFFF"/>';
+  return svg;
+}
+
 // 작은 DOM 생성기: h('div', { class: 'card', onClick }, child1, 'text', ...)
 export function h(tag, props, ...children) {
   const el = document.createElement(tag);

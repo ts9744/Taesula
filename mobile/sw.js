@@ -1,5 +1,5 @@
 // 앱 화면 파일만 캐시합니다. 서버 API(로봇·물품·카메라)는 항상 네트워크로 요청합니다.
-const CACHE = 'taesula-v1';
+const CACHE = 'taesula-v2';
 const SHELL = [
   './', './index.html', './manifest.webmanifest', './css/app.css',
   './js/app.js', './js/api.js', './js/ui.js',

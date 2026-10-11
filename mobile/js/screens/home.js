@@ -1,6 +1,6 @@
 // 홈: 로봇 상태 · 빠른 이동 · 최근 물품
 import { api, getServerUrl, setServerUrl } from '../api.js';
-import { h, icon, btn, toast, openSheet, field, gridView, mergeLocations, itemBadge, robotStatusLabel } from '../ui.js';
+import { h, icon, btn, toast, openSheet, field, gridView, mergeLocations, itemBadge, robotStatusLabel, sida, sidaFace } from '../ui.js';
 
 export default {
   title: '홈',
@@ -8,7 +8,7 @@ export default {
   renderHeader() {
     return [
       h('div', { class: 'brand' },
-        h('div', { class: 'brand-mark' }, icon('robot', 20, 2)),
+        h('div', { class: 'brand-mark' }, sidaFace(30)),
         h('div', null, h('span', { class: 'brand-name' }, 'Taesula'), h('span', { class: 'brand-sub' }, '스마트 물류 로봇 관제'))),
       h('button', { type: 'button', class: 'icon-btn', 'aria-label': '서버 설정', onClick: openSettings }, icon('settings', 22)),
     ];
@@ -25,12 +25,24 @@ export default {
     const conn = h('span', { class: 'conn off' }, '연결 확인 중');
     const pos = h('span', { class: 'v big' }, '—');
     const state = h('span', { class: 'v' }, '—');
+    const stage = h('div', { class: 'robot-stage' }, sida('idle', 190));
+    let stageState = 'idle';
     const robotCard = h('section', { class: 'robot-card', 'aria-label': '로봇 SIDA 상태' },
-      mapBox,
-      h('div', { class: 'robot-info' },
-        h('div', { class: 'top' }, h('span', null, '로봇 SIDA'), conn),
-        h('div', null, h('span', { class: 'k' }, '현재 위치'), pos),
-        h('div', null, h('span', { class: 'k' }, '상태'), state)));
+      h('div', { class: 'head' }, h('span', { class: 'name' }, 'SIDA', h('small', null, '물류 로봇')), conn),
+      stage,
+      h('div', { class: 'robot-body' },
+        mapBox,
+        h('div', { class: 'robot-info' },
+          h('div', null, h('span', { class: 'k' }, '현재 위치'), pos),
+          h('div', null, h('span', { class: 'k' }, '상태'), state))));
+
+    // 이동 중이면 카트에 탄 SIDA, 아니면 카트에서 내린 SIDA
+    function setStage(status) {
+      const next = status || 'offline';
+      if (next === stageState) return;
+      stageState = next;
+      stage.replaceChildren(sida(next, 190));
+    }
 
     // --- 빠른 이동
     const cta = h('a', { class: 'btn btn-primary btn-lg btn-block', href: '#/scan' }, icon('scan', 22, 2), 'QR 인식 시작');
@@ -50,7 +62,7 @@ export default {
     let mapEl = mapBox;
     function setMap(robot) {
       if (!grid) {
-        mapEl.replaceChildren(h('div', { style: { gridColumn: '1 / -1', fontSize: '12px', color: '#9EA2A9', lineHeight: 1.5 } },
+        mapEl.replaceChildren(h('div', { style: { gridColumn: '1 / -1', fontSize: '12px', color: '#B9CFD0', lineHeight: 1.5 } },
           '격자 지도가 아직 없습니다. 격자 탭에서 만들어 주세요.'));
         return;
       }
@@ -101,13 +113,15 @@ export default {
         const hasPos = r.current_x != null && r.current_y != null;
         pos.textContent = hasPos ? `(${r.current_x}, ${r.current_y})` : '—';
         const remaining = (s.current_path || []).length;
-        state.textContent = `${r.status || '—'} · ${robotStatusLabel(r.status)}${remaining ? ` · 남은 명령 ${remaining}` : ''}`;
+        state.textContent = `${robotStatusLabel(r.status)}${remaining ? ` · 남은 명령 ${remaining}` : ''}`;
         setMap(hasPos ? { x: r.current_x - 1, y: r.current_y - 1 } : null);
+        setStage(r.status);
       } catch {
         if (!alive) return;
         conn.className = 'conn off';
         conn.textContent = '연결 끊김';
         setMap(null);
+        setStage('offline');
       }
     }
 
