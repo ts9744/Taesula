@@ -25,8 +25,8 @@ from server.routers import items as items_router
 from server.routers import locations as locations_router
 
 from algorithm.astar import a_star
-from camera.camera import get_camera, generate_camera_stream
-from chatbot import agent as chat_agent
+from server.camera.camera import get_camera, generate_camera_stream
+from server.chatbot import agent as chat_agent
 
 # =========================
 # FASTAPI APP
