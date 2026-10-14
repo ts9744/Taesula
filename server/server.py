@@ -23,6 +23,7 @@ from server.schemas.request_models import (
 from server.routers import command as command_router
 from server.routers import items as items_router
 from server.routers import locations as locations_router
+from server.routers import robot as robot_router
 
 from algorithm.astar import a_star
 from server.camera.camera import get_camera, generate_camera_stream
@@ -41,6 +42,7 @@ app = FastAPI(
 app.include_router(command_router.router)
 app.include_router(items_router.router)
 app.include_router(locations_router.router)
+app.include_router(robot_router.router)
 
 # =========================
 # ROBOT COMMAND STATE & PATH UTILS
@@ -460,61 +462,6 @@ def get_grid_map():
         "pathfinding_grid": json.loads(row[4]),
         "updated_at": row[5]
     }
-
-# =========================
-# ROBOT STATUS API
-# =========================
-
-@app.get("/robot/status")
-def get_robot_status():
-    conn = get_db()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT id, current_x, current_y, status FROM robot_status")
-    row = cursor.fetchone()
-
-    conn.close()
-
-    if row:
-        return {
-            "id": row[0],
-            "current_x": row[1],
-            "current_y": row[2],
-            "status": row[3]
-        }
-
-    return {"message": "robot status not found"}
-
-
-@app.put("/robot/status")
-def update_robot_status(current_x: int, current_y: int, status: str):
-    conn = get_db()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT id FROM robot_status WHERE id=1")
-    row = cursor.fetchone()
-
-    if row:
-        cursor.execute(
-            "UPDATE robot_status SET current_x=?, current_y=?, status=? WHERE id=1",
-            (current_x, current_y, status)
-        )
-    else:
-        cursor.execute(
-            "INSERT INTO robot_status (id, current_x, current_y, status) VALUES (1, ?, ?, ?)",
-            (current_x, current_y, status)
-        )
-
-    conn.commit()
-    conn.close()
-
-    return {
-        "message": "robot status updated",
-        "current_x": current_x,
-        "current_y": current_y,
-        "status": status
-    }
-
 
 # =========================
 # CAMERA API
