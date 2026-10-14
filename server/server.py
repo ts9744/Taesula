@@ -15,7 +15,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 
 from server.database import get_db, load_grid_from_db
-from server.schemas.request_models import TestCommandRequest
 
 from server.routers import command as command_router
 from server.routers import items as items_router
@@ -46,9 +45,6 @@ app.include_router(grid_map_router.router)
 # =========================
 # ROBOT COMMAND STATE & PATH UTILS
 # =========================
-
-test_command = "stop"
-test_command_ready = False
 
 DIRECTIONS = ["north", "east", "south", "west"]
 
@@ -165,42 +161,6 @@ def get_status():
         "current_path": command_router.current_path
     }
 
-@app.post("/test-command")
-def set_test_command(request: TestCommandRequest):
-    global test_command, test_command_ready
-
-    test_command = request.command
-    test_command_ready = True
-
-    return {
-        "message": "test command set",
-        "command": test_command,
-        "ready": test_command_ready
-    }
-
-
-@app.get("/test-command")
-def get_test_command():
-    global test_command, test_command_ready
-
-    if not test_command_ready:
-        return {
-            "direction": "stop",
-            "source": "test-command",
-            "message": "no test command"
-        }
-
-    command_to_send = test_command
-
-    # ESP32가 한 번 받아가면 다시 stop 상태로 초기화
-    test_command = "stop"
-    test_command_ready = False
-
-    return {
-        "direction": command_to_send,
-        "source": "test-command",
-        "message": "test command consumed"
-    }
 
 # =========================
 # ROUTE API
