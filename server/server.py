@@ -1,10 +1,7 @@
 from pathlib import Path
 import sys
 
-import cv2
 from fastapi import FastAPI
-from fastapi import HTTPException, Response
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 # =========================
@@ -21,9 +18,9 @@ from server.routers import items as items_router
 from server.routers import locations as locations_router
 from server.routers import robot as robot_router
 from server.routers import grid_map as grid_map_router
+from server.routers import camera as camera_router
 
 from algorithm.astar import a_star
-from server.camera.camera import get_camera, generate_camera_stream
 from server.chatbot import agent as chat_agent
 
 # =========================
@@ -41,6 +38,7 @@ app.include_router(items_router.router)
 app.include_router(locations_router.router)
 app.include_router(robot_router.router)
 app.include_router(grid_map_router.router)
+app.include_router(camera_router.router)
 
 # =========================
 # ROBOT COMMAND STATE & PATH UTILS
@@ -313,42 +311,6 @@ def get_route_by_qr(qr_code: str):
         "command_path": command_path
     }
 
-
-# =========================
-# CAMERA API
-# =========================
-
-qr_detector = cv2.QRCodeDetector()
-
-# 라즈베리파이의 카메라를 통해 사진을 찍어 인식하는 부분
-@app.get("/camera/qr")
-def read_qr_from_camera():
-    try:
-        cam = get_camera()
-        frame = cam.capture_array()
-
-        qr_data, points, _ = qr_detector.detectAndDecode(frame)
-
-        if qr_data:
-            return {
-                "detected": True,
-                "qr_code": qr_data
-            }
-
-        return {
-            "detected": False,
-            "qr_code": None
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/camera/stream")
-def camera_stream():
-    return StreamingResponse(
-        generate_camera_stream(),
-        media_type="multipart/x-mixed-replace; boundary=frame"
-    )
 
 # =========================
 # CHATBOT API
