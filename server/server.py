@@ -12,6 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.append(str(BASE_DIR))
 
 from server.database import get_db, load_grid_from_db
+from server import state
 
 from server.routers import command as command_router
 from server.routers import items as items_router
@@ -155,8 +156,8 @@ def get_status():
 
     return {
         "robot_status": robot_db_status,
-        "current_command": command_router.current_command,
-        "current_path": command_router.current_path
+        "current_command": state.current_command,
+        "current_path": state.current_path
     }
 
 
@@ -283,7 +284,7 @@ def get_route_by_qr(qr_code: str):
     command_path = path_to_commands(path, start_direction)
 
     # 9. /next-command API에서 순차적으로 가져갈 수 있도록 명령 경로 저장
-    command_router.current_path = command_path.copy()
+    state.current_path = command_path.copy()
 
     # 10. item, robot, destination, path 정보를 응답
     return {
