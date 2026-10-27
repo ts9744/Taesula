@@ -19,7 +19,7 @@ from server.routers import grid_map as grid_map_router
 from server.routers import camera as camera_router
 from server.routers import route as route_router
 from server.routers import system as system_router
-
+from server.routers.mobile_app import setup_mobile
 from server.chatbot import agent as chat_agent
 
 # =========================
@@ -33,7 +33,6 @@ app = FastAPI(
 )
 
 # 모바일 앱 제공: http://<서버 IP>:8000/app/
-from mobile_app import setup_mobile
 setup_mobile(app, BASE_DIR)
 
 app.include_router(command_router.router)
