@@ -10,7 +10,12 @@ REQUEST_TIMEOUT = 10
 def get_item_info(qr_code: str) -> dict:
     resp = requests.get(f"{SERVER_BASE_URL}/items/{qr_code}", timeout=REQUEST_TIMEOUT)
     resp.raise_for_status()
-    return resp.json()
+    data = resp.json()
+
+    destination = data.get("destination_id")
+    if destination:
+        destination.pop("location_id", None)
+    return data
 
 
 def list_items() -> dict:
