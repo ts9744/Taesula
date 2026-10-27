@@ -1,9 +1,10 @@
 import cv2
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import StreamingResponse
 
-from server.camera.camera import get_camera, generate_camera_stream
+from server.camera.camera import get_camera, generate_camera_stream, get_frame
+from server.camera.detector import detect, draw_detections
 
 
 router = APIRouter()
@@ -40,3 +41,20 @@ def camera_stream():
         generate_camera_stream(),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
+
+
+@router.get("/camera/detect")
+def camera_detect():
+    try:
+        frame = get_frame()
+        return {"detections": detect(frame)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/camera/detect/image")
+def camera_detect_image():
+    frame = get_frame().copy()
+    dets = detect(frame)
+    ok, buf = cv2.imencode(".jpg", draw_detections(frame, dets))
+    return Response(content=buf.tobytes(), media_type="image/jpeg")
