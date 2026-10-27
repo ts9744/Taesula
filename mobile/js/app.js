@@ -6,6 +6,7 @@ import register from './screens/register.js';
 import manage from './screens/manage.js';
 import grid from './screens/grid.js';
 import chat from './screens/chat.js';
+import { bellButton, startWatching } from './notify.js';
 
 const SCREENS = {
   home: { mod: home, tab: '홈', icon: 'home' },
@@ -36,12 +37,14 @@ function renderTabs(active) {
 function renderAppbar(mod, ctx) {
   if (mod.renderHeader) {
     appbar.replaceChildren(...[].concat(mod.renderHeader(ctx)));
-    return;
+  } else {
+    appbar.replaceChildren(
+      h('a', { class: 'back', href: '#/home', 'aria-label': '홈으로' }, icon('back', 22, 2)),
+      h('h1', null, mod.title),
+    );
   }
-  appbar.replaceChildren(
-    h('a', { class: 'back', href: '#/home', 'aria-label': '홈으로' }, icon('back', 22, 2)),
-    h('h1', null, mod.title),
-  );
+  // 모든 화면 오른쪽 위에 알림 종
+  appbar.append(bellButton());
 }
 
 function show() {
@@ -61,7 +64,7 @@ function show() {
     setHeaderAction(node) {
       const old = appbar.querySelector('[data-action]');
       if (old) old.remove();
-      if (node) { node.dataset.action = '1'; appbar.append(node); }
+      if (node) { node.dataset.action = '1'; appbar.insertBefore(node, appbar.querySelector('.bell')); }
     },
   };
   renderAppbar(mod, ctx);
@@ -71,6 +74,7 @@ function show() {
 
 window.addEventListener('hashchange', show);
 show();
+startWatching();
 
 // 오프라인에서도 앱 화면이 열리도록 서비스 워커 등록 (HTTPS 또는 localhost에서만 동작)
 if ('serviceWorker' in navigator && window.isSecureContext) {

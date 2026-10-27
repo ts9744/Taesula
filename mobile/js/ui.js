@@ -23,6 +23,8 @@ const ICONS = {
   spinner: '<path d="M21 12a9 9 0 1 1-6.22-8.56"/>',
   chat: '<path d="M4 5h16v11H10l-5 4v-4H4z"/><path d="M9 10.5h.01M12 10.5h.01M15 10.5h.01"/>',
   send: '<path d="M12 19V5M5 12l7-7 7 7"/>',
+  bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
+  alert: '<path d="M12 4 2.8 19.5h18.4z"/><path d="M12 10v4.5M12 17.2h.01"/>',
 };
 
 export function icon(name, size = 20, strokeWidth = 1.9) {
