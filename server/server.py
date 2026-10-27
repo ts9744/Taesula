@@ -32,6 +32,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# 모바일 앱 제공: http://<서버 IP>:8000/app/
+from mobile_app import setup_mobile
+setup_mobile(app, BASE_DIR)
+
 app.include_router(command_router.router)
 app.include_router(items_router.router)
 app.include_router(locations_router.router)
