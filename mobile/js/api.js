@@ -3,7 +3,6 @@
 // 다른 주소에서 앱을 열었다면 홈 화면의 설정에서 서버 주소를 입력합니다.
 
 const KEY = "taesula.serverUrl";
-const SESSION_KEY = "taesula.chatSession";
 
 function readStore(key) {
   try {
@@ -47,22 +46,6 @@ export class ApiError extends Error {
     super(message);
     this.status = status;
   }
-}
-
-export function getChatSession() {
-  let id = readStore(SESSION_KEY);
-  if (!id) {
-    id = crypto.randomUUID
-      ? crypto.randomUUID()
-      : String(Date.now()) + Math.random().toString(16).slice(2);
-    writeStore(SESSION_KEY, id);
-  }
-  return id;
-}
-
-export function resetChatSession() {
-  writeStore(SESSION_KEY, null);
-  return getChatSession();
 }
 
 async function request(method, path, { params, json, timeout = 8000 } = {}) {
@@ -139,9 +122,9 @@ export const api = {
   saveGridMap: (payload) => request("POST", "/grid-map", { json: payload }),
 
   // 챗봇 (서버의 로컬 LLM이 도구를 여러 번 부르면 오래 걸려서 대기 시간을 길게 둔다)
-  chat: (message) =>
+  chat: (session_id, message) =>
     request("POST", "/chat", {
-      json: { session_id: getChatSession(), message },
+      json: { session_id, message },
       timeout: 120000,
     }),
 
