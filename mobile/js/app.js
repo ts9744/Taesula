@@ -5,6 +5,7 @@ import scan from './screens/scan.js';
 import register from './screens/register.js';
 import manage from './screens/manage.js';
 import grid from './screens/grid.js';
+import chat from './screens/chat.js';
 
 const SCREENS = {
   home: { mod: home, tab: '홈', icon: 'home' },
@@ -12,6 +13,7 @@ const SCREENS = {
   register: { mod: register, tab: '등록', icon: 'plus' },
   manage: { mod: manage, tab: '관리', icon: 'list' },
   grid: { mod: grid, tab: '격자', icon: 'grid' },
+  chat: { mod: chat, tab: '챗봇', icon: 'chat' },
 };
 
 const appbar = document.getElementById('appbar');

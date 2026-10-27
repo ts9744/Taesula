@@ -94,6 +94,9 @@ export const api = {
   gridMap: () => request('GET', '/grid-map'),
   saveGridMap: (payload) => request('POST', '/grid-map', { json: payload }),
 
+  // 챗봇 (서버의 로컬 LLM이 도구를 여러 번 부르면 오래 걸려서 대기 시간을 길게 둔다)
+  chat: (session_id, message) => request('POST', '/chat', { json: { session_id, message }, timeout: 120000 }),
+
   // 카메라
   cameraQr: () => request('GET', '/camera/qr', { timeout: 5000 }),
   streamUrl: () => buildUrl('/camera/stream', { t: Date.now() }),
