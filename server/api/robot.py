@@ -253,4 +253,4 @@ def get_next_command():
 
     return {
         "direction": current_command,
-        "remaining_path": current_pat
+        "remaining_path": current_path
