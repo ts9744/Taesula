@@ -427,3 +427,33 @@ details.manual[open] summary { margin-bottom: 10px; }
 }
 .chat-send:disabled, .chat-input:disabled { opacity: .5; cursor: default; }
 .chat-send:focus-visible, .chat-chip:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* ---------- 알림 ---------- */
+.bell { position: relative; margin-right: -10px; }
+.bell-dot {
+  position: absolute; top: 6px; right: 5px; min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 9px; background: var(--danger); color: #FFFFFF; border: 2px solid var(--bg);
+  font-size: 11px; font-weight: 700; line-height: 14px; text-align: center; font-family: var(--mono);
+}
+.bell-dot[hidden] { display: none; }
+.noti-list { display: flex; flex-direction: column; gap: 8px; }
+.noti-list .empty { white-space: pre-line; }
+.noti {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 12px; border-radius: 12px; background: var(--bg);
+}
+.noti.unread { background: var(--accent-soft); }
+.noti-ico {
+  width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: #FFFFFF; color: var(--accent);
+}
+.noti.ok .noti-ico { color: var(--green); }
+.noti.warn .noti-ico { color: var(--warn); }
+.noti.error .noti-ico { color: var(--danger); }
+.noti-t { flex: 1; min-width: 0; }
+.noti-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.noti-title { font-size: 15px; font-weight: 700; }
+.noti.unread .noti-title::after { content: ''; display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--focus); vertical-align: middle; }
+.noti-time { font-size: 12px; color: var(--muted); flex-shrink: 0; }
+.noti p { margin: 3px 0 0; font-size: 14px; line-height: 1.5; color: var(--muted); word-break: keep-all; }
