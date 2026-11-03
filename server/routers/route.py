@@ -178,8 +178,8 @@ def get_route_by_qr(qr_code: str):
             "goal": [goal[0], goal[1]]
         }
 
-    # TODO: 시작 방향을 DB에서 조회해서 A*에 넘겨주고,
-    # 그에 맞게 path_to_commands도 수정하기
+    # 로봇은 메카넘휠 횡이동 방식이라 회전하지 않는다.
+    # 항상 격자의 북쪽(위쪽)을 바라보도록 놓고 시작하는 것을 기준으로 한다.
     start_direction = "north"
 
     # 8. 좌표 경로를 JSON 응답용 리스트와 ESP32 명령 리스트로 변환
@@ -188,6 +188,19 @@ def get_route_by_qr(qr_code: str):
 
     # 9. /next-command API에서 순차적으로 가져갈 수 있도록 명령 경로 저장
     state.current_path = command_path.copy()
+    state.current_item_qr = item_qr_code
+    state.current_steps = 0
+
+    # 배송 시작: 물품과 로봇 상태를 이동 중으로 변경
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE items SET status = 'moving' WHERE qr_code = ?",
+        (item_qr_code,)
+    )
+    cursor.execute("UPDATE robot_status SET status = 'moving' WHERE id = 1")
+    conn.commit()
+    conn.close()
 
     # 10. item, robot, destination, path 정보를 응답
     return {
