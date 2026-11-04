@@ -18,6 +18,12 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 
+class NoCacheStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
 def setup_mobile(app: FastAPI, base_dir: Path) -> None:
     mobile_dir = Path(base_dir) / "mobile"
 
@@ -50,4 +56,4 @@ def setup_mobile(app: FastAPI, base_dir: Path) -> None:
     def mobile_root():
         return RedirectResponse(url="/app/")
 
-    app.mount("/app", StaticFiles(directory=mobile_dir, html=True), name="mobile")
+    app.mount("/app", NoCacheStaticFiles(directory=mobile_dir, html=True), name="mobile")
