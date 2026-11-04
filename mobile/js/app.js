@@ -1,37 +1,48 @@
 // Taesula 모바일 앱 — 화면 전환(해시 라우터)과 공통 레이아웃
-import { h, icon } from './ui.js';
-import home from './screens/home.js';
-import scan from './screens/scan.js';
-import register from './screens/register.js';
-import manage from './screens/manage.js';
-import grid from './screens/grid.js';
-import chat from './screens/chat.js';
-import { bellButton, startWatching } from './notify.js';
+import { h, icon } from "./ui.js";
+import home from "./screens/home.js";
+import scan from "./screens/scan.js";
+import register from "./screens/register.js";
+import manage from "./screens/manage.js";
+import grid from "./screens/grid.js";
+import chat from "./screens/chat.js";
+import { bellButton, startWatching } from "./notify.js";
 
 const SCREENS = {
-  home: { mod: home, tab: '홈', icon: 'home' },
-  scan: { mod: scan, tab: '인식', icon: 'scan' },
-  register: { mod: register, tab: '등록', icon: 'plus' },
-  manage: { mod: manage, tab: '관리', icon: 'list' },
-  grid: { mod: grid, tab: '격자', icon: 'grid' },
-  chat: { mod: chat, tab: '챗봇', icon: 'chat' },
+  home: { mod: home, tab: "홈", icon: "home" },
+  scan: { mod: scan, tab: "인식", icon: "scan" },
+  register: { mod: register, tab: "등록", icon: "plus" },
+  manage: { mod: manage, tab: "관리", icon: "list" },
+  grid: { mod: grid, tab: "격자", icon: "grid" },
+  chat: { mod: chat, tab: "챗봇", icon: "chat" },
 };
 
-const appbar = document.getElementById('appbar');
-const screen = document.getElementById('screen');
-const tabbar = document.getElementById('tabbar');
+const appbar = document.getElementById("appbar");
+const screen = document.getElementById("screen");
+const tabbar = document.getElementById("tabbar");
 
 let cleanup = null;
 
 function currentRoute() {
-  const name = (location.hash || '').replace(/^#\/?/, '');
-  return SCREENS[name] ? name : 'home';
+  const name = (location.hash || "").replace(/^#\/?/, "");
+  return SCREENS[name] ? name : "home";
 }
 
 function renderTabs(active) {
-  tabbar.replaceChildren(...Object.entries(SCREENS).map(([name, s]) =>
-    h('a', { class: 'tab', href: `#/${name}`, 'aria-current': name === active ? 'page' : null },
-      icon(s.icon, 22, name === active ? 2.1 : 1.8), h('span', null, s.tab))));
+  tabbar.replaceChildren(
+    ...Object.entries(SCREENS).map(([name, s]) =>
+      h(
+        "a",
+        {
+          class: "tab",
+          href: `#/${name}`,
+          "aria-current": name === active ? "page" : null,
+        },
+        icon(s.icon, 22, name === active ? 2.1 : 1.8),
+        h("span", null, s.tab),
+      ),
+    ),
+  );
 }
 
 function renderAppbar(mod, ctx) {
@@ -39,8 +50,12 @@ function renderAppbar(mod, ctx) {
     appbar.replaceChildren(...[].concat(mod.renderHeader(ctx)));
   } else {
     appbar.replaceChildren(
-      h('a', { class: 'back', href: '#/home', 'aria-label': '홈으로' }, icon('back', 22, 2)),
-      h('h1', null, mod.title),
+      h(
+        "a",
+        { class: "back", href: "#/home", "aria-label": "홈으로" },
+        icon("back", 22, 2),
+      ),
+      h("h1", null, mod.title),
     );
   }
   // 모든 화면 오른쪽 위에 알림 종
@@ -51,10 +66,16 @@ function show() {
   const name = currentRoute();
   const { mod } = SCREENS[name];
 
-  if (cleanup) { try { cleanup(); } catch { /* 이전 화면 정리 실패는 무시 */ } }
+  if (cleanup) {
+    try {
+      cleanup();
+    } catch {
+      /* 이전 화면 정리 실패는 무시 */
+    }
+  }
   cleanup = null;
 
-  document.title = name === 'home' ? 'Taesula' : `${mod.title} · Taesula`;
+  document.title = name === "home" ? "Taesula" : `${mod.title} · Taesula`;
   renderTabs(name);
   screen.replaceChildren();
   window.scrollTo(0, 0);
@@ -62,9 +83,12 @@ function show() {
   const ctx = {
     appbar,
     setHeaderAction(node) {
-      const old = appbar.querySelector('[data-action]');
+      const old = appbar.querySelector("[data-action]");
       if (old) old.remove();
-      if (node) { node.dataset.action = '1'; appbar.insertBefore(node, appbar.querySelector('.bell')); }
+      if (node) {
+        node.dataset.action = "1";
+        appbar.insertBefore(node, appbar.querySelector(".bell"));
+      }
     },
   };
   renderAppbar(mod, ctx);
@@ -72,11 +96,35 @@ function show() {
   cleanup = mod.render(screen, ctx) || null;
 }
 
-window.addEventListener('hashchange', show);
+window.addEventListener("hashchange", show);
 show();
 startWatching();
 
 // 오프라인에서도 앱 화면이 열리도록 서비스 워커 등록 (HTTPS 또는 localhost에서만 동작)
-if ('serviceWorker' in navigator && window.isSecureContext) {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+if ("serviceWorker" in navigator && window.isSecureContext) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+
+// 시작 화면: 최소 1.4초 보여준 뒤 페이지 로딩이 끝나면 페이드아웃
+const splash = document.getElementById("splash");
+if (splash) {
+  const MIN_MS = 1400; // 페이지 열린 시점부터 최소 표시 시간
+  const MAX_MS = 3000; // 글꼴 로딩이 늦어져도 이 시간이 지나면 닫음
+  let closed = false;
+
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    const wait = Math.max(0, MIN_MS - performance.now());
+    setTimeout(() => {
+      splash.classList.add("is-hidden");
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.content = "#F2F1ED";
+      setTimeout(() => splash.remove(), 600);
+    }, wait);
+  };
+
+  if (document.readyState === "complete") close();
+  else window.addEventListener("load", close, { once: true });
+  setTimeout(close, MAX_MS);
 }

@@ -1,34 +1,132 @@
 <!doctype html>
 <html lang="ko">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#E8EEEE">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Taesula">
-  <title>Taesula</title>
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icons/icon-192.png" type="image/png">
-  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-  <!-- 인터넷이 없으면 시스템 글꼴로 대체됩니다 -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="css/app.css">
-</head>
-<body>
-  <div class="app">
-    <header class="appbar" id="appbar"></header>
-    <main class="screen" id="screen" tabindex="-1"></main>
-  </div>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#284A4F" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Taesula" />
+    <title>Taesula</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="icons/icon-192.png" type="image/png" />
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+    <!-- 인터넷이 없으면 시스템 글꼴로 대체됩니다 -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap"
+    />
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <div class="splash" id="splash" aria-hidden="true">
+      <div class="splash-center">
+        <svg class="splash-logo" viewBox="0 0 98 98" width="98" height="98">
+          <rect
+            class="f"
+            style="--i: 0"
+            x="0"
+            y="0"
+            width="28"
+            height="28"
+            rx="6"
+          />
+          <rect
+            class="f"
+            style="--i: 1"
+            x="35"
+            y="0"
+            width="28"
+            height="28"
+            rx="6"
+          />
+          <rect
+            class="f"
+            style="--i: 2"
+            x="70"
+            y="0"
+            width="28"
+            height="28"
+            rx="6"
+          />
+          <rect
+            class="o"
+            style="--i: 3"
+            x="1"
+            y="36"
+            width="26"
+            height="26"
+            rx="5"
+          />
+          <rect
+            class="f"
+            style="--i: 4"
+            x="35"
+            y="35"
+            width="28"
+            height="28"
+            rx="6"
+          />
+          <rect
+            class="o"
+            style="--i: 5"
+            x="71"
+            y="36"
+            width="26"
+            height="26"
+            rx="5"
+          />
+          <rect
+            class="o"
+            style="--i: 6"
+            x="1"
+            y="71"
+            width="26"
+            height="26"
+            rx="5"
+          />
+          <rect
+            class="m"
+            style="--i: 7"
+            x="35"
+            y="70"
+            width="28"
+            height="28"
+            rx="6"
+          />
+          <rect
+            class="o"
+            style="--i: 8"
+            x="71"
+            y="71"
+            width="26"
+            height="26"
+            rx="5"
+          />
+        </svg>
+        <div class="splash-title">TAESULA</div>
+      </div>
+      <div class="splash-foot">
+        <div class="splash-sida">SIDA</div>
+        <div class="splash-sub">Support and Intelligent Delivery Assistant</div>
+      </div>
+    </div>
+    <div class="app">
+      <header class="appbar" id="appbar"></header>
+      <main class="screen" id="screen" tabindex="-1"></main>
+    </div>
 
-  <nav class="tabbar" aria-label="주 메뉴">
-    <div class="tabbar-inner" id="tabbar"></div>
-  </nav>
+    <nav class="tabbar" aria-label="주 메뉴">
+      <div class="tabbar-inner" id="tabbar"></div>
+    </nav>
 
-  <div class="toast-wrap" id="toasts" role="status" aria-live="polite"></div>
+    <div class="toast-wrap" id="toasts" role="status" aria-live="polite"></div>
 
-  <script type="module" src="js/app.js"></script>
-</body>
+    <script type="module" src="js/app.js"></script>
+  </body>
 </html>
