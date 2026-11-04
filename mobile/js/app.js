@@ -105,9 +105,11 @@ if ("serviceWorker" in navigator && window.isSecureContext) {
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 
-// 시작 화면: 최소 1.4초 보여준 뒤 페이지 로딩이 끝나면 페이드아웃
+// 시작 화면: 세션 첫 실행에만 표시, 최소 표시 시간이 지나면 페이드아웃
 const splash = document.getElementById("splash");
-if (splash) {
+if (splash && document.documentElement.classList.contains("splash-seen")) {
+  splash.remove();
+} else if (splash) {
   const MIN_MS = 2500; // 페이지 열린 시점부터 최소 표시 시간
   const MAX_MS = 4000; // 글꼴 로딩이 늦어져도 이 시간이 지나면 닫음
   let closed = false;
@@ -119,7 +121,7 @@ if (splash) {
     setTimeout(() => {
       splash.classList.add("is-hidden");
       const meta = document.querySelector('meta[name="theme-color"]');
-      if (meta) meta.content = "#F2F1ED";
+      if (meta) meta.content = "#E8EEEE";
       setTimeout(() => splash.remove(), 600);
     }, wait);
   };
