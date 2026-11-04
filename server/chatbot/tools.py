@@ -82,7 +82,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_item_info",
-            "description": "QR 코드로 물품 하나의 상태와 목적지 위치(구역 이름 zone_name, 좌표 x/y 포함)를 조회한다.",
+            "description": "등록된 모든 물품의 목록과 상태, 목적지 구역 이름(zone_name)을 조회한다.",
             "parameters": {
                 "type": "object",
                 "properties": {
