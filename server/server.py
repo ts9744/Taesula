@@ -3,6 +3,10 @@ import sys
 
 from fastapi import FastAPI
 from pydantic import BaseModel
+import os
+import secrets
+from fastapi import Request
+from fastapi.responses import JSONResponse
 
 # =========================
 # CONFIG
@@ -31,6 +35,20 @@ app = FastAPI(
     description="Raspberry Pi와 ESP32 간 로봇 명령 및 상태 데이터 통신을 위한 API 서버",
     version="1.0.0"
 )
+
+API_KEY = os.environ.get("TAESULA_API_KEY", "")
+PUBLIC_PREFIXES = ("/app",)               # 앱 화면 파일은 키 없이 열려야 함
+LOCAL_PROXY_HOSTS = {"127.0.0.1", "::1"}  # Funnel이 프록시하는 출발지
+
+@app.middleware("http")
+async def require_api_key_for_external(request: Request, call_next):
+    client_host = request.client.host if request.client else ""
+    is_external = client_host in LOCAL_PROXY_HOSTS
+    if is_external and not request.url.path.startswith(PUBLIC_PREFIXES):
+        key = request.headers.get("x-api-key") or request.query_params.get("key") or ""
+        if not API_KEY or not secrets.compare_digest(key, API_KEY):
+            return JSONResponse({"detail": "인증이 필요합니다."}, status_code=401)
+    return await call_next(request)
 
 # 모바일 앱 제공: http://<서버 IP>:8000/app/
 setup_mobile(app, BASE_DIR)
