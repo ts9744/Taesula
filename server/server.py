@@ -37,16 +37,19 @@ app = FastAPI(
 )
 
 API_KEY = os.environ.get("TAESULA_API_KEY", "")
+PUBLIC_EXACT = {"/"}
 PUBLIC_PREFIXES = ("/app",)               # 앱 화면 파일은 키 없이 열려야 함
 LOCAL_PROXY_HOSTS = {"127.0.0.1", "::1"}  # Funnel이 프록시하는 출발지
 
 @app.middleware("http")
 async def require_api_key_for_external(request: Request, call_next):
     client_host = request.client.host if request.client else ""
+    path = request.url.path
     is_external = client_host in LOCAL_PROXY_HOSTS
-    if is_external and not request.url.path.startswith(PUBLIC_PREFIXES):
+    is_public = path in PUBLIC_EXACT or path.startswith(PUBLIC_PREFIXES)
+    if is_external and not is_public:
         key = request.headers.get("x-api-key") or request.query_params.get("key") or ""
-        if not API_KEY or not secrets.compare_digest(key, API_KEY):
+        if not API_KEY or not secrets.compare_digest(key.encode("utf-8"), API_KEY.encode("utf-8")):
             return JSONResponse({"detail": "인증이 필요합니다."}, status_code=401)
     return await call_next(request)
 

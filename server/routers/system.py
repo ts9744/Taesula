@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from fastapi.responses import RedirectResponse
 
 from server import state
 from server.database import get_db
@@ -9,7 +10,8 @@ router = APIRouter()
 
 @router.get("/")
 def root():
-    return {"message": "robot communication server is running"}
+    return RedirectResponse(url="/app/")
+
 
 
 @router.get("/status")

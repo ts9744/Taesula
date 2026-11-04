@@ -3,12 +3,14 @@ import os
 import requests
 
 SERVER_BASE_URL = os.environ.get("SERVER_URL", "http://127.0.0.1:8000")
+API_KEY = os.environ.get("TAESULA_API_KEY", "")
+HEADERS = {"X-API-Key": API_KEY} if API_KEY else {}
 
 REQUEST_TIMEOUT = 10
 
 
 def get_item_info(qr_code: str) -> dict:
-    resp = requests.get(f"{SERVER_BASE_URL}/items/{qr_code}", timeout=REQUEST_TIMEOUT)
+    resp = requests.get(f"{SERVER_BASE_URL}/items/{qr_code}", timeout=REQUEST_TIMEOUT, headers=HEADERS)
     resp.raise_for_status()
     data = resp.json()
 
@@ -19,11 +21,11 @@ def get_item_info(qr_code: str) -> dict:
 
 
 def list_items() -> dict:
-    items_resp = requests.get(f"{SERVER_BASE_URL}/items", timeout=REQUEST_TIMEOUT)
+    items_resp = requests.get(f"{SERVER_BASE_URL}/items", timeout=REQUEST_TIMEOUT, headers=HEADERS)
     items_resp.raise_for_status()
     items = items_resp.json()
 
-    locations_resp = requests.get(f"{SERVER_BASE_URL}/locations", timeout=REQUEST_TIMEOUT)
+    locations_resp = requests.get(f"{SERVER_BASE_URL}/locations", timeout=REQUEST_TIMEOUT, headers=HEADERS)
     locations_resp.raise_for_status()
     locations_by_id = {loc["id"]: loc for loc in locations_resp.json()}
 
@@ -46,13 +48,13 @@ def list_items() -> dict:
 
 
 def get_robot_status() -> dict:
-    resp = requests.get(f"{SERVER_BASE_URL}/robot/status", timeout=REQUEST_TIMEOUT)
+    resp = requests.get(f"{SERVER_BASE_URL}/robot/status", timeout=REQUEST_TIMEOUT, headers=HEADERS)
     resp.raise_for_status()
     return resp.json()
 
 
 def start_delivery(qr_code: str) -> dict:
-    resp = requests.get(f"{SERVER_BASE_URL}/route/{qr_code}", timeout=REQUEST_TIMEOUT)
+    resp = requests.get(f"{SERVER_BASE_URL}/route/{qr_code}", timeout=REQUEST_TIMEOUT, headers=HEADERS)
     resp.raise_for_status()
     return resp.json()
 
@@ -61,7 +63,7 @@ def move_robot(direction: str) -> dict:
     resp = requests.post(
         f"{SERVER_BASE_URL}/test-command",
         json={"command": direction},
-        timeout=REQUEST_TIMEOUT,
+        timeout=REQUEST_TIMEOUT, headers=HEADERS,
     )
     resp.raise_for_status()
     return resp.json()
