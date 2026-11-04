@@ -188,6 +188,8 @@ def get_route_by_qr(qr_code: str):
 
     # 9. /next-command API에서 순차적으로 가져갈 수 있도록 명령 경로 저장
     state.current_path = command_path.copy()
+    state.goal = goal
+    state.pending_move = None
     state.current_item_qr = item_qr_code
     state.current_steps = 0
 

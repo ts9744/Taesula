@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from server import state
+from server.routers import obstacle
 from server.database import get_db
 from server.schemas.request_models import (
     CommandDoneRequest,
@@ -37,6 +38,8 @@ def has_move_command(path):
 
 @router.get("/next-command")
 def get_next_command():
+    obstacle.commit_pending_move()
+
     if not state.current_path:
         state.current_command = "stop"
         state.current_steps = 0
@@ -63,10 +66,13 @@ def get_next_command():
     state.current_command = command
     state.current_steps = steps
 
+    extras = obstacle.mark_dispatched(command, steps)
+
     return {
         "direction": command,
         "steps": steps,
         "remaining_path": state.current_path
+        **extras
     }
 
 

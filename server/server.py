@@ -21,6 +21,7 @@ from server.routers import items as items_router
 from server.routers import locations as locations_router
 from server.routers import robot as robot_router
 from server.routers import grid_map as grid_map_router
+from server.routers import obstacle as obstacle_router
 from server.routers import camera as camera_router
 from server.routers import route as route_router
 from server.routers import system as system_router
@@ -73,6 +74,7 @@ app.include_router(items_router.router)
 app.include_router(locations_router.router)
 app.include_router(robot_router.router)
 app.include_router(grid_map_router.router)
+app.include_router(obstacle_router.router)
 app.include_router(camera_router.router)
 app.include_router(route_router.router)
 app.include_router(system_router.router)
