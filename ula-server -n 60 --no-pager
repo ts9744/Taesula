@@ -1,0 +1,19 @@
+[0;1;32m●[0m taesula-server.service - Taesula FastAPI Server
+     Loaded: loaded (]8;;file://taesula/etc/systemd/system/taesula-server.service\/etc/systemd/system/taesula-server.service]8;;\; [0;1;32menabled[0m; preset: [0;1;32menabled[0m)
+    Drop-In: /etc/systemd/system/taesula-server.service.d
+             └─]8;;file://taesula/etc/systemd/system/taesula-server.service.d/override.conf\override.conf]8;;\
+     Active: [0;1;32mactive (running)[0m since Wed 2026-11-04 16:59:03 KST; 9s ago
+ Invocation: be2dea55c674477abc116281635ad3c5
+    Process: 5756 ExecStartPre=/home/taesula/Desktop/Taesula/taesula/bin/python /home/taesula/Desktop/Taesula/db_init.py (code=exited, status=0/SUCCESS)
+   Main PID: 5758 (python)
+      Tasks: 7[0;38:5:245m (limit: 4810)[0m
+        CPU: 1.178s
+     CGroup: /system.slice/taesula-server.service
+             └─[0;38:5:245m5758 /home/taesula/Desktop/Taesula/taesula/bin/python -m server.server[0m
+
+Nov 04 16:59:03 taesula systemd[1]: Starting taesula-server.service - Taesula FastAPI Server...
+Nov 04 16:59:03 taesula systemd[1]: Started taesula-server.service - Taesula FastAPI Server.
+Nov 04 16:59:04 taesula python[5758]: INFO:     Started server process [5758]
+Nov 04 16:59:04 taesula python[5758]: INFO:     Waiting for application startup.
+Nov 04 16:59:04 taesula python[5758]: INFO:     Application startup complete.
+Nov 04 16:59:04 taesula python[5758]: INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)

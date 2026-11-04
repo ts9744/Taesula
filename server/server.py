@@ -5,8 +5,9 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import os
 import secrets
-from fastapi import Request
+from fastapi import Request, Security
 from fastapi.responses import JSONResponse
+from fastapi.security.api_key import APIKeyHeader
 
 # =========================
 # CONFIG
@@ -29,18 +30,29 @@ from server.chatbot import agent as chat_agent
 # =========================
 # FASTAPI APP
 # =========================
+ENABLE_DOCS = os.environ.get("TAESULA_ENABLE_DOCS") == "1"
+
+# Swagger에 Authorize 버튼을 띄우기 위한 선언 (실제 검사는 아래 미들웨어가 함)
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 app = FastAPI(
     title="Robot Communication API",
     description="Raspberry Pi와 ESP32 간 로봇 명령 및 상태 데이터 통신을 위한 API 서버",
-    version="1.0.0"
+    version="1.0.0",
+    docs_url="/docs" if ENABLE_DOCS else None,
+    redoc_url=None,
+    openapi_url="/openapi.json" if ENABLE_DOCS else None,
+    dependencies=[Security(api_key_header)],
 )
 
+# =========================
+# 외부(Funnel) 요청 인증
+# =========================
+
 API_KEY = os.environ.get("TAESULA_API_KEY", "")
-PUBLIC_EXACT = {"/","/docs",}
+PUBLIC_EXACT = {"/"} | ({"/docs", "/openapi.json"} if ENABLE_DOCS else set())
 PUBLIC_PREFIXES = ("/app",)               # 앱 화면 파일은 키 없이 열려야 함
 LOCAL_PROXY_HOSTS = {"127.0.0.1", "::1"}  # Funnel이 프록시하는 출발지
-
 @app.middleware("http")
 async def require_api_key_for_external(request: Request, call_next):
     client_host = request.client.host if request.client else ""
