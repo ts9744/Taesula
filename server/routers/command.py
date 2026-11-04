@@ -71,7 +71,7 @@ def get_next_command():
     return {
         "direction": command,
         "steps": steps,
-        "remaining_path": state.current_path
+        "remaining_path": state.current_path,
         **extras
     }
 
