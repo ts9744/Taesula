@@ -37,7 +37,7 @@ app = FastAPI(
 )
 
 API_KEY = os.environ.get("TAESULA_API_KEY", "")
-PUBLIC_EXACT = {"/"}
+PUBLIC_EXACT = {"/","/docs",}
 PUBLIC_PREFIXES = ("/app",)               # 앱 화면 파일은 키 없이 열려야 함
 LOCAL_PROXY_HOSTS = {"127.0.0.1", "::1"}  # Funnel이 프록시하는 출발지
 

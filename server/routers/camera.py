@@ -1,6 +1,6 @@
 import cv2
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Response, Request
 from fastapi.responses import StreamingResponse
 
 from server.camera.camera import get_camera, generate_camera_stream, get_frame
@@ -36,10 +36,11 @@ def read_qr_from_camera():
 
 
 @router.get("/camera/stream")
-def camera_stream():
+async def camera_stream(request: Request):
     return StreamingResponse(
-        generate_camera_stream(),
-        media_type="multipart/x-mixed-replace; boundary=frame"
+        generate_camera_stream(request),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"Cache-Control": "no-cache, no-store"},
     )
 
 

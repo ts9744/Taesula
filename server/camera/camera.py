@@ -1,5 +1,6 @@
 import cv2
 import time
+import asyncio
 from threading import Lock
 from fastapi import HTTPException
 
@@ -11,6 +12,9 @@ except ImportError:
 
 camera = None
 camera_lock = Lock()
+STREAM_SIZE = (480, 270)   # 스트림 해상도 (QR 인식은 원본 1280x720 그대로 사용)
+STREAM_QUALITY = 60        # JPEG 품질 (기본 95)
+STREAM_FPS = 15            # 초당 프레임 수
 
 
 def get_camera():
@@ -37,19 +41,20 @@ def get_frame():
         frame = cam.capture_array()
         return frame
 
-
-def generate_camera_stream():
+async def generate_camera_stream(request):
+    interval = 1 / STREAM_FPS
     while True:
-        frame = get_frame()
+        if await request.is_disconnected():
+            break
 
-        ret, buffer = cv2.imencode(".jpg", frame)
+        frame = await asyncio.to_thread(get_frame)
+        small = cv2.resize(frame, STREAM_SIZE)
+        ret, buffer = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, STREAM_QUALITY])
 
-        if not ret:
-            continue
+        if ret:
+            yield (
+                b"--frame\r\n"
+                b"Content-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n"
+            )
 
-        jpg_bytes = buffer.tobytes()
-
-        yield (
-            b"--frame\r\n"
-            b"Content-Type: image/jpeg\r\n\r\n" + jpg_bytes + b"\r\n"
-        )
+        await asyncio.sleep(interval)
