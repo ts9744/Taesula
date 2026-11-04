@@ -3,6 +3,7 @@
 // 다른 주소에서 앱을 열었다면 홈 화면의 설정에서 서버 주소를 입력합니다.
 
 const KEY = "taesula.serverUrl";
+const API_KEY_STORE = "taesula.apiKey";
 
 function readStore(key) {
   try {
@@ -20,6 +21,18 @@ function writeStore(key, value) {
   }
 }
 
+// 주소에 ?key=... 를 붙여 한 번 열면 저장하고 주소창에서 지운다
+(() => {
+  const u = new URL(window.location.href);
+  const k = u.searchParams.get("key");
+  if (k) {
+    writeStore(API_KEY_STORE, k);
+    u.searchParams.delete("key");
+    history.replaceState(null, "", u.pathname + u.search + u.hash);
+  }
+})();
+
+let apiKey = readStore(API_KEY_STORE) || "";
 let serverUrl = (readStore(KEY) || "").trim().replace(/\/+$/, "");
 
 export function getServerUrl() {
@@ -53,9 +66,13 @@ async function request(method, path, { params, json, timeout = 8000 } = {}) {
   const timer = setTimeout(() => controller.abort(), timeout);
   let res;
   try {
+    const headers = {};
+    if (json) headers["Content-Type"] = "application/json";
+    if (apiKey) headers["X-API-Key"] = apiKey;
+
     res = await fetch(buildUrl(path, params), {
       method,
-      headers: json ? { "Content-Type": "application/json" } : undefined,
+      headers,
       body: json ? JSON.stringify(json) : undefined,
       signal: controller.signal,
     });
@@ -130,6 +147,8 @@ export const api = {
 
   // 카메라
   cameraQr: () => request("GET", "/camera/qr", { timeout: 5000 }),
-  streamUrl: () => buildUrl("/camera/stream", { t: Date.now() }),
-  qrImageUrl: (text) => buildUrl("/mobile-api/qr.png", { text }),
+  streamUrl: () =>
+    buildUrl("/camera/stream", { t: Date.now(), key: apiKey || undefined }),
+  qrImageUrl: (text) =>
+    buildUrl("/mobile-api/qr.png", { text, key: apiKey || undefined }),
 };
