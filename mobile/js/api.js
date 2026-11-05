@@ -112,6 +112,7 @@ const enc = encodeURIComponent;
 export const api = {
   // 로봇
   status: () => request("GET", "/status", { timeout: 4000 }),
+  obstacles: () => request("GET", "/robot/obstacles", { timeout: 4000 }), 
   setRobotStatus: (current_x, current_y, status) =>
     request("PUT", "/robot/status", {
       params: { current_x, current_y, status },
