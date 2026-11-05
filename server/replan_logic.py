@@ -136,3 +136,24 @@ def replan(grid, pos, goal, command, blocked, a_star, to_commands,
         "path": [list(p) for p in path],
         "commands": to_commands(path),
     }
+
+
+def plan_with_release(grid, pos, goal, blocked, a_star, to_commands, release_count):
+    """길이 없을 때: 가장 오래전에 막은 칸 release_count 개를 '일단 비었다고 치고' 길을 찾는다.
+
+    blocked 는 건드리지 않는다. 길이 있으면 {"released": [...], "path": [...], "commands": [...]},
+    없으면 None. 실제로 비었는지는 로봇이 그 길로 가면서 센서로 확인한다
+    (아직 있으면 /robot/obstacle 보고로 다시 막힌다).
+    """
+    rows, cols = len(grid), len(grid[0])
+    order = sorted(blocked, key=lambda c: blocked[c])
+    released = order[:release_count]
+    work = [row[:] for row in grid]
+    for (x, y) in order[release_count:]:
+        if 0 <= x < cols and 0 <= y < rows and (x, y) != tuple(pos):
+            work[y][x] = 1
+    path = a_star(work, tuple(pos), tuple(goal))
+    if path is None:
+        return None
+    return {"released": released, "path": [list(p) for p in path],
+            "commands": to_commands(path)}

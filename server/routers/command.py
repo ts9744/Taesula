@@ -39,6 +39,7 @@ def has_move_command(path):
 @router.get("/next-command")
 def get_next_command():
     obstacle.commit_pending_move()
+    obstacle.try_retry()
 
     if not state.current_path:
         state.current_command = "stop"
@@ -48,7 +49,8 @@ def get_next_command():
             "direction": "stop",
             "steps": 0,
             "message": "path is empty",
-            "remaining_path": state.current_path
+            "remaining_path": state.current_path,
+            **obstacle.idle_extras()
         }
 
     # 같은 이동 명령이 연달아 있으면 묶어서 한 번에 보낸다.
