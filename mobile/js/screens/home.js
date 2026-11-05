@@ -74,13 +74,19 @@ export default {
     root.append(robotCard, cta, returnBtn, quick, recent);
 
     let mapEl = mapBox;
-    function setMap(robot) {
+    function setMap(robot, blocked = []) {
       if (!grid) {
         mapEl.replaceChildren(h('div', { style: { gridColumn: '1 / -1', fontSize: '12px', color: '#B9CFD0', lineHeight: 1.5 } },
           '격자 지도가 아직 없습니다. 격자 탭에서 만들어 주세요.'));
         return;
       }
-      const next = gridView(grid, { dark: true, robot });
+      
+      const shown = grid.map((row) => row.slice());
+      for (const b of blocked) {
+        const r = b.y - 1, c = b.x - 1;
+        if (shown[r] && shown[r][c] === 0) shown[r][c] = 1;
+      }
+      const next = gridView(shown, { dark: true, robot });
       next.setAttribute('aria-label', '공장 격자 지도와 로봇 위치');
       mapEl.replaceWith(next);
       mapEl = next;
@@ -121,6 +127,8 @@ export default {
       try {
         const s = await api.status();
         if (!alive) return;
+        const ob = await api.obstacles().catch(() => null);
+        const blocked = ob && ob.blocked ? ob.blocked : [];
         const r = s.robot_status || {};
         conn.className = 'conn';
         conn.textContent = '연결됨';
@@ -128,7 +136,7 @@ export default {
         pos.textContent = hasPos ? `(${r.current_x}, ${r.current_y})` : '—';
         const remaining = (s.current_path || []).length;
         state.textContent = `${robotStatusLabel(r.status)}${remaining ? ` · 남은 명령 ${remaining}` : ''}`;
-        setMap(hasPos ? { x: r.current_x - 1, y: r.current_y - 1 } : null);
+        setMap(hasPos ? { x: r.current_x - 1, y: r.current_y - 1 } : null, blocked);
         setStage(r.status);
       } catch {
         if (!alive) return;
