@@ -1,4 +1,5 @@
 import os
+import threading
 import time
 
 import requests
@@ -6,25 +7,60 @@ import serial
 
 API = "http://127.0.0.1:8000"
 API_KEY = os.environ.get("TAESULA_API_KEY", "")
-PORT = "/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0"
+PORT = os.environ.get(
+    "TAESULA_ESP32_PORT",
+    "/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0",
+)
 BAUD = 115200
-STEP_SEC = 1.5      # 1칸 이동 + 여유 (FORWARD_RUN_MS = 1000)
+STEP_SEC = 1.5          # 1칸 이동 + 여유 (FORWARD_RUN_MS = 1000)
 IDLE_POLL_SEC = 1.0
+RECONNECT_SEC = 2.0
+HEARTBEAT_SEC = 2.0
 
-http = requests.Session()
-http.headers["X-API-Key"] = API_KEY
+MSG_NOT_CONNECTED = "ESP32가 연결되어 있지 않습니다. 라즈베리파이 USB에 ESP32를 연결해 주세요."
+
+HEADERS = {"X-API-Key": API_KEY}
+
+# 서버에 주기적으로 보고할 연결 상태 (heartbeat 스레드가 읽음)
+link = {"connected": False, "message": MSG_NOT_CONNECTED}
+
+
+class SerialLost(Exception):
+    pass
 
 
 def api_get(path):
-    r = http.get(f"{API}{path}", timeout=5)
+    r = requests.get(f"{API}{path}", headers=HEADERS, timeout=5)
     r.raise_for_status()
     return r.json()
 
 
 def api_post(path, body):
-    r = http.post(f"{API}{path}", json=body, timeout=5)
+    r = requests.post(f"{API}{path}", json=body, headers=HEADERS, timeout=5)
     r.raise_for_status()
     return r.json()
+
+
+def set_link(connected, message=""):
+    if link["connected"] != connected or link["message"] != message:
+        print(f"[link] connected={connected} {message}")
+    link["message"] = message
+    link["connected"] = connected
+
+
+def heartbeat_loop():
+    """연결 상태를 서버에 계속 알린다. 브리지가 죽으면 보고가 끊겨 서버가 알아챈다."""
+    while True:
+        try:
+            requests.post(
+                f"{API}/robot/esp32",
+                json={"connected": link["connected"], "message": link["message"]},
+                headers=HEADERS,
+                timeout=3,
+            )
+        except requests.RequestException:
+            pass
+        time.sleep(HEARTBEAT_SEC)
 
 
 def flush_esp32(ser):
@@ -37,44 +73,66 @@ def flush_esp32(ser):
 def send_and_wait(ser, line, expect, timeout):
     """line을 보내고 expect와 정확히 같은 응답을 기다린다.
     반환: "ok" / "err" / "timeout"
+    연결이 끊기면 SerialLost 발생
     """
-    ser.reset_input_buffer()
-    ser.write((line + "\n").encode())
+    try:
+        ser.reset_input_buffer()
+        ser.write((line + "\n").encode())
 
-    end = time.time() + timeout
-    while time.time() < end:
-        reply = ser.readline().decode(errors="ignore").strip()
-        if not reply:
-            continue
-        print("ESP32:", reply)
-        if reply == expect:
-            return "ok"
-        if reply.startswith("ERR"):
-            return "err"
-        # 그 외(READY, 이전 명령의 늦은 DONE 등)는 무시
-    return "timeout"
+        end = time.time() + timeout
+        while time.time() < end:
+            reply = ser.readline().decode(errors="ignore").strip()
+            if not reply:
+                continue
+            print("ESP32:", reply)
+            if reply == expect:
+                return "ok"
+            if reply.startswith("ERR"):
+                return "err"
+            # 그 외(READY, 이전 명령의 늦은 DONE 등)는 무시
+        return "timeout"
+    except (serial.SerialException, OSError) as e:
+        raise SerialLost(str(e))
 
 
 def halt(ser, reason):
     """로봇을 세우고 브리지를 멈춘다. 위치가 어긋났을 수 있으므로 수동 확인 필요."""
-    send_and_wait(ser, "stop", "DONE stop 0", 3)
-    print(f"HALT: {reason}")
-    print("로봇 실제 위치 확인 후 PUT /robot/status 로 DB 위치를 맞추고 브리지를 다시 실행하세요.")
+    if ser is not None:
+        try:
+            send_and_wait(ser, "stop", "DONE stop 0", 3)
+        except SerialLost:
+            pass
+    msg = f"로봇이 정지되었습니다({reason}). 로봇 위치를 확인해 DB 위치를 맞춘 뒤 브리지를 다시 시작하세요."
+    set_link(False, msg)
+    print("HALT:", reason)
     while True:
         time.sleep(60)
 
 
-def main():
-    if not API_KEY:
-        print("TAESULA_API_KEY not set")
-        return
-
-    ser = serial.Serial(PORT, BAUD, timeout=0.5)
-    time.sleep(2)               # 포트 열 때 ESP32 리셋 대기
-    flush_esp32(ser)
-    print("bridge started")
-
+def open_esp32():
+    """ESP32가 꽂힐 때까지 기다렸다가 포트를 연다."""
     while True:
+        if not os.path.exists(PORT):
+            set_link(False, MSG_NOT_CONNECTED)
+            time.sleep(RECONNECT_SEC)
+            continue
+        try:
+            ser = serial.Serial(PORT, BAUD, timeout=0.5)
+            time.sleep(2)               # 포트 열 때 ESP32 리셋 대기
+            flush_esp32(ser)
+            return ser
+        except (serial.SerialException, OSError) as e:
+            set_link(False, MSG_NOT_CONNECTED)
+            print("open failed:", e)
+            time.sleep(RECONNECT_SEC)
+
+
+def run(ser):
+    while True:
+        # 명령을 꺼내기 전에 연결부터 확인 (꺼낸 뒤 끊기면 그 명령이 사라진다)
+        if not os.path.exists(PORT):
+            raise SerialLost("port removed")
+
         try:
             cmd = api_get("/next-command")
         except requests.RequestException as e:
@@ -113,13 +171,17 @@ def main():
         timeout = steps * STEP_SEC + 5
         print("send:", line)
 
-        result = send_and_wait(ser, line, expect, timeout)
-
-        # ERR: ESP32가 명령을 거부한 것이라 로봇은 움직이지 않았다 -> 한 번 재시도
-        if result == "err":
-            print("ERR, retry once")
-            flush_esp32(ser)
+        try:
             result = send_and_wait(ser, line, expect, timeout)
+
+            # ERR: ESP32가 명령을 거부한 것이라 로봇은 움직이지 않았다 -> 한 번 재시도
+            if result == "err":
+                print("ERR, retry once")
+                flush_esp32(ser)
+                result = send_and_wait(ser, line, expect, timeout)
+        except SerialLost:
+            # 이동 도중 끊김: 실제로 몇 칸 갔는지 알 수 없다
+            halt(None, f"'{line}' 이동 중 ESP32 연결 끊김")
 
         if result != "ok":
             # 다음 /next-command 를 부르면 commit_pending_move()가
@@ -127,6 +189,29 @@ def main():
             halt(ser, f"'{line}' 실패 ({result})")
 
         # ok면 다음 /next-command 호출 -> commit_pending_move()가 위치 갱신
+
+
+def main():
+    if not API_KEY:
+        print("TAESULA_API_KEY not set")
+        return
+
+    threading.Thread(target=heartbeat_loop, daemon=True).start()
+    print("bridge started")
+
+    while True:
+        ser = open_esp32()
+        set_link(True, "")
+        try:
+            run(ser)
+        except SerialLost as e:
+            print("ESP32 disconnected:", e)
+            set_link(False, MSG_NOT_CONNECTED)
+            try:
+                ser.close()
+            except Exception:
+                pass
+            time.sleep(RECONNECT_SEC)
 
 
 if __name__ == "__main__":
