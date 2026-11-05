@@ -130,6 +130,9 @@ export const api = {
 
   // 경로 (호출 시 서버가 command_path를 로봇 대기열에 넣음)
   route: (qr_code) => request("GET", `/route/${enc(qr_code)}`),
+  // 시작점(홈) 복귀
+  returnHome: () => request("POST", "/robot/return-home"),
+  robotHome: () => request("GET", "/robot/home"),
 
   // 목적지 · 격자
   locations: () => request("GET", "/locations"),

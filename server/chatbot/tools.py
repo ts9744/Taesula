@@ -59,6 +59,12 @@ def start_delivery(qr_code: str) -> dict:
     return resp.json()
 
 
+def return_home() -> dict:
+    resp = requests.post(f"{SERVER_BASE_URL}/robot/return-home", timeout=REQUEST_TIMEOUT, headers=HEADERS)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def move_robot(direction: str) -> dict:
     resp = requests.post(
         f"{SERVER_BASE_URL}/test-command",
@@ -75,6 +81,7 @@ TOOL_FUNCTIONS = {
     "get_robot_status": get_robot_status,
     "start_delivery": start_delivery,
     "move_robot": move_robot,
+    "return_home": return_home,
 }
 
 TOOL_DEFINITIONS = [
@@ -140,6 +147,14 @@ TOOL_DEFINITIONS = [
                 },
                 "required": ["direction"],
             },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "return_home",
+            "description": "배송을 마친 로봇을 격자 지도의 시작점(홈)으로 복귀시킨다. 배송 중에는 거부된다.",
+            "parameters": {"type": "object", "properties": {}},
         },
     },
 ]

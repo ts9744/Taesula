@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 from server import state
-from server.routers import obstacle
+from server.routers import home, obstacle
 from server.database import get_db
 from server.schemas.request_models import (
     CommandDoneRequest,
@@ -40,6 +40,7 @@ def has_move_command(path):
 def get_next_command():
     obstacle.commit_pending_move()
     obstacle.try_retry()
+    home.maybe_auto_return()
 
     if not state.current_path:
         state.current_command = "stop"
@@ -98,6 +99,7 @@ def command_done(report: CommandDoneRequest):
         )
 
     arrived = False
+    returned_home = False
 
     # 2. 장애물로 멈춘 경우: 못 간 칸은 경로 앞에 되돌려 놓고 상태만 변경
     if report.result == "obstacle":
@@ -121,7 +123,16 @@ def command_done(report: CommandDoneRequest):
             )
             arrived = True
 
+        if getattr(state, "mission", None) == "return":
+            returned_home = True
+            state.goal = None
+
         state.current_item_qr = None
+        state.mission = None
+
+        # 배송 목적지에 도착했으면 잠시 뒤 홈으로 자동 복귀 예약
+        if arrived:
+            home.schedule_return()
 
     # 4. 아직 갈 길이 남았으면 이동 중
     else:
@@ -143,6 +154,7 @@ def command_done(report: CommandDoneRequest):
         "current_y": row[1] if row else None,
         "status": row[2] if row else None,
         "arrived": arrived,
+        "returned_home": returned_home,
         "remaining_path": state.current_path
     }
 

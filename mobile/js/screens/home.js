@@ -1,6 +1,6 @@
 // 홈: 로봇 상태 · 빠른 이동 · 최근 물품
 import { api, getServerUrl, setServerUrl } from '../api.js';
-import { h, icon, btn, toast, openSheet, field, gridView, mergeLocations, itemBadge, robotStatusLabel, sida, sidaFace } from '../ui.js';
+import { h, icon, btn, busy, toast, openSheet, field, gridView, mergeLocations, itemBadge, robotStatusLabel, sida, sidaFace } from '../ui.js';
 
 export default {
   title: '홈',
@@ -46,6 +46,20 @@ export default {
 
     // --- 빠른 이동
     const cta = h('a', { class: 'btn btn-primary btn-lg btn-block', href: '#/scan' }, icon('scan', 22, 2), 'QR 인식 시작');
+    const RETURN_MSG = {
+      returning: '시작점으로 복귀를 시작합니다.',
+      already_home: '이미 시작점에 있습니다.',
+      no_path: '복귀 경로가 막혀 있습니다. 잠시 뒤 다시 찾습니다.',
+    };
+    const returnBtn = btn('시작점으로 복귀', { kind: 'secondary', icon: 'home', block: true });
+    returnBtn.addEventListener('click', () => busy(returnBtn, async () => {
+      try {
+        const r = await api.returnHome();
+        const ok = r.status === 'returning' || r.status === 'already_home';
+        toast(RETURN_MSG[r.status] || r.detail || r.message || '복귀하지 못했습니다.', ok ? 'ok' : 'error');
+        pollStatus();
+      } catch (e) { toast(e.message, 'error'); }
+    }));
     const quick = h('div', { class: 'quick' },
       [['register', 'plus', '물품 등록'], ['manage', 'list', '물품 관리'], ['grid', 'grid', '격자 생성']].map(([r, ic, t]) =>
         h('a', { href: `#/${r}` }, h('div', { class: 'ico' }, icon(ic, 20, 2)), t)));
@@ -57,7 +71,7 @@ export default {
         h('a', { href: '#/manage', style: { fontSize: '14px', fontWeight: 600, textDecoration: 'none' } }, '전체 보기')),
       recentList);
 
-    root.append(robotCard, cta, quick, recent);
+    root.append(robotCard, cta, returnBtn, quick, recent);
 
     let mapEl = mapBox;
     function setMap(robot) {
