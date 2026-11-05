@@ -234,9 +234,6 @@ class GridControlGUI:
             )
             return
 
-        if not self.save_robot_start_to_db():
-            return
-
         data = {
             "rows": self.rows,
             "cols": self.cols,
@@ -252,6 +249,10 @@ class GridControlGUI:
             )
 
             if response.status_code == 200:
+                # 지도 저장이 성공한 뒤에만 로봇 위치를 바꾼다 (지도 검사에서 거부되면 위치도 그대로)
+                if not self.save_robot_start_to_db():
+                    return
+
                 messagebox.showinfo(
                     "DB 저장 완료",
                     "격자 지도가 서버 DB에 저장되었습니다."

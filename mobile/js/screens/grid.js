@@ -276,12 +276,13 @@ export default {
     async function save() {
       if (!start) { toast('저장하기 전에 시작점 모드로 로봇 시작 위치를 고르세요.', 'error'); setMode('start'); return; }
       try {
-        await api.setRobotStatus(start[1] + 1, start[0] + 1, 'idle');
+        // 지도 저장이 성공한 뒤에만 로봇 위치를 바꾼다 (지도 검사에서 거부되면 위치도 그대로)
         await api.saveGridMap({
           rows, cols,
           raw_grid: grid,
           pathfinding_grid: grid.map((row) => row.map((v) => (v === 1 ? 1 : 0))),
         });
+        await api.setRobotStatus(start[1] + 1, start[0] + 1, 'idle');
         dirty = false;
         updatedAt = new Date().toLocaleString('ko-KR', { hour12: false });
         draw();

@@ -9,8 +9,37 @@ from server.schemas.request_models import GridMapRequest
 router = APIRouter()
 
 
+def validate_start_cell(raw_grid):
+    """raw_grid 에 시작점(값 2)이 정확히 한 칸인지 확인한다. 아니면 400."""
+    start_cells = [
+        (x + 1, y + 1)
+        for y, row in enumerate(raw_grid)
+        for x, value in enumerate(row)
+        if value == 2
+    ]
+
+    if not start_cells:
+        raise HTTPException(
+            status_code=400,
+            detail="시작점이 없습니다. 시작점 모드로 한 칸을 지정한 뒤 저장하세요."
+        )
+
+    if len(start_cells) > 1:
+        cells = ", ".join(f"({x}, {y})" for x, y in start_cells)
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"시작점이 {len(start_cells)}칸입니다: {cells}. "
+                "이동 가능 모드로 나머지 칸을 지우고 한 칸만 남긴 뒤 저장하세요."
+            )
+        )
+
+
 @router.post("/grid-map")
 def save_grid_map(grid_data: GridMapRequest):
+    # try 밖에서 검사해야 아래 except Exception 에 잡혀 500 으로 바뀌지 않는다
+    validate_start_cell(grid_data.raw_grid)
+
     raw_grid_json = json.dumps(grid_data.raw_grid, ensure_ascii=False)
     pathfinding_grid_json = json.dumps(
         grid_data.pathfinding_grid,
