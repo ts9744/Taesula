@@ -7,5 +7,5 @@ pyinstaller==6.20.0
 pillow==12.2.0
 qrcode==8.2
 python-dotenv==1.2.2
-ollama==0.6.3pyserial
-pyserial==3.5pyserial
+ollama==0.6.3
+pyserial==3.5
