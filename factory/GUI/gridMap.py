@@ -83,6 +83,7 @@ class GridControlGUI:
 
         tk.Button(bottom_frame, text="DB 저장", command=self.save_grid_to_db).grid(row=0, column=0, padx=5)
         tk.Button(bottom_frame, text="DB 불러오기", command=self.load_grid_from_db).grid(row=0, column=1, padx=5)
+        tk.Button(bottom_frame, text="로봇을 시작점에 두기", command=self.place_robot_at_start).grid(row=0, column=2, padx=5)
 
     def go_back(self):
         for widget in self.root.winfo_children():
@@ -249,13 +250,15 @@ class GridControlGUI:
             )
 
             if response.status_code == 200:
-                # 지도 저장이 성공한 뒤에만 로봇 위치를 바꾼다 (지도 검사에서 거부되면 위치도 그대로)
-                if not self.save_robot_start_to_db():
-                    return
+                # 로봇 위치는 바꾸지 않는다. 서버가 위치가 없거나 지도 밖·장애물 칸일 때만 시작점에 둔다.
+                if response.json().get("robot_placed_at_start"):
+                    detail = "로봇 위치를 시작점으로 지정했습니다."
+                else:
+                    detail = "로봇 위치는 그대로입니다."
 
                 messagebox.showinfo(
                     "DB 저장 완료",
-                    "격자 지도가 서버 DB에 저장되었습니다."
+                    f"격자 지도가 서버 DB에 저장되었습니다.\n{detail}"
                 )
             else:
                 messagebox.showerror(
@@ -519,42 +522,38 @@ class GridControlGUI:
 
         return result["value"]
 
-    def save_robot_start_to_db(self):
-        if self.start is None:
-            messagebox.showwarning(
-                "시작점 없음",
-                "먼저 시작점 모드에서 로봇 시작 위치를 선택하세요."
-            )
-            return False
-
-        # self.start = (row, col)
-        # DB에는 x, y 기준으로 저장해야 하므로 x=col+1, y=row+1
-        current_x = self.start[1] + 1
-        current_y = self.start[0] + 1
+    def place_robot_at_start(self):
+        """로봇을 손으로 시작점에 갖다 놓았을 때: 서버 위치를 시작점으로 맞추고 남은 이동을 모두 취소한다."""
+        if not messagebox.askyesno(
+            "로봇을 시작점에 두기",
+            "로봇을 실제로 시작점에 놓았나요?\n"
+            "서버에 저장된 시작점 기준으로 지정되며, 진행 중인 이동과 복귀 예약은 취소됩니다."
+        ):
+            return
 
         try:
-            response = requests.put(
-                f"{SERVER_URL}/robot/status",
-                params={
-                    "current_x": current_x,
-                    "current_y": current_y,
-                    "status": "idle"
-                },
-                timeout=5
-            )
+            response = requests.post(f"{SERVER_URL}/robot/place-at-start", timeout=5)
 
             if response.status_code != 200:
                 messagebox.showerror(
-                    "시작점 저장 오류",
+                    "위치 지정 오류",
                     f"서버 응답 오류\n상태 코드: {response.status_code}\n{response.text}"
                 )
-                return False
+                return
 
-            return True
+            data = response.json()
+            if data.get("status") != "placed":
+                messagebox.showerror(
+                    "위치 지정 오류",
+                    data.get("detail") or data.get("message") or "로봇 위치를 지정하지 못했습니다."
+                )
+                return
+
+            x, y = data["robot"]
+            messagebox.showinfo("위치 지정 완료", f"로봇 위치를 시작점 ({x}, {y})으로 지정했습니다.")
 
         except requests.exceptions.RequestException as e:
             messagebox.showerror(
                 "서버 연결 오류",
-                f"로봇 시작 위치를 저장할 수 없습니다.\n{e}"
+                f"로봇 위치를 지정할 수 없습니다.\n{e}"
             )
-            return False

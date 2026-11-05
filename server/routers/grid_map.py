@@ -35,6 +35,36 @@ def validate_start_cell(raw_grid):
         )
 
 
+def place_robot_if_invalid(cursor, grid_data):
+    cursor.execute("SELECT current_x, current_y FROM robot_status WHERE id = 1")
+    row = cursor.fetchone()
+
+    if row and row[0] is not None and row[1] is not None:
+        x, y = row[0] - 1, row[1] - 1
+        if (0 <= x < grid_data.cols and 0 <= y < grid_data.rows
+                and grid_data.pathfinding_grid[y][x] != 1):
+            return False
+
+    start_x, start_y = next(
+        (x + 1, y + 1)
+        for y, cells in enumerate(grid_data.raw_grid)
+        for x, value in enumerate(cells)
+        if value == 2
+    )
+
+    if row:
+        cursor.execute(
+            "UPDATE robot_status SET current_x = ?, current_y = ?, status = 'idle' WHERE id = 1",
+            (start_x, start_y)
+        )
+    else:
+        cursor.execute(
+            "INSERT INTO robot_status (id, current_x, current_y, status) VALUES (1, ?, ?, 'idle')",
+            (start_x, start_y)
+        )
+    return True
+
+
 @router.post("/grid-map")
 def save_grid_map(grid_data: GridMapRequest):
     # try 밖에서 검사해야 아래 except Exception 에 잡혀 500 으로 바뀌지 않는다
@@ -99,12 +129,17 @@ def save_grid_map(grid_data: GridMapRequest):
                 pathfinding_grid_json
             ))
 
+        # 로봇 위치는 건드리지 않는다. 시작점(홈)을 바꿔도 로봇은 실제로 그 자리에 있기 때문.
+        # 위치가 없거나(처음 설정) 새 지도 밖이거나 장애물 칸일 때만 시작점에 둔다.
+        robot_placed = place_robot_if_invalid(cursor, grid_data)
+
         conn.commit()
 
         return {
             "message": "grid map saved",
             "rows": grid_data.rows,
-            "cols": grid_data.cols
+            "cols": grid_data.cols,
+            "robot_placed_at_start": robot_placed
         }
 
     except Exception as e:

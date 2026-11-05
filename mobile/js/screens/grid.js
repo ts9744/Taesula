@@ -119,7 +119,21 @@ export default {
       busy(loadBtn, () => load(true));
     });
 
-    root.append(tools, modes, wrap, hint, h('div', { class: 'row' }, saveBtn, loadBtn), updated);
+    // 로봇을 손으로 시작점에 갖다 놓았을 때: 서버 위치를 시작점으로 맞추고 남은 이동을 모두 취소
+    const placeBtn = btn('로봇을 시작점에 두기', { icon: 'robot', block: true });
+    placeBtn.addEventListener('click', () => {
+      if (dirty) { toast('바꾼 지도를 먼저 저장하세요. 서버에 저장된 시작점 기준으로 지정됩니다.', 'error'); return; }
+      if (!confirm('로봇을 실제로 시작점에 놓았나요?\n진행 중인 이동과 복귀 예약은 취소됩니다.')) return;
+      busy(placeBtn, async () => {
+        try {
+          const r = await api.placeAtStart();
+          if (r.status !== 'placed') { toast(r.detail || r.message || '로봇 위치를 지정하지 못했습니다.', 'error'); return; }
+          toast(`로봇 위치를 시작점 (${r.robot[0]}, ${r.robot[1]})으로 지정했습니다.`, 'ok');
+        } catch (e) { toast(e.message, 'error'); }
+      });
+    });
+
+    root.append(tools, modes, wrap, hint, h('div', { class: 'row' }, saveBtn, loadBtn), placeBtn, updated);
     setMode(mode);
     draw();
     load(false);
@@ -276,17 +290,18 @@ export default {
     async function save() {
       if (!start) { toast('저장하기 전에 시작점 모드로 로봇 시작 위치를 고르세요.', 'error'); setMode('start'); return; }
       try {
-        // 지도 저장이 성공한 뒤에만 로봇 위치를 바꾼다 (지도 검사에서 거부되면 위치도 그대로)
-        await api.saveGridMap({
+        // 로봇 위치는 바꾸지 않는다. 서버가 위치가 없거나 지도 밖·장애물 칸일 때만 시작점에 둔다.
+        const res = await api.saveGridMap({
           rows, cols,
           raw_grid: grid,
           pathfinding_grid: grid.map((row) => row.map((v) => (v === 1 ? 1 : 0))),
         });
-        await api.setRobotStatus(start[1] + 1, start[0] + 1, 'idle');
         dirty = false;
         updatedAt = new Date().toLocaleString('ko-KR', { hour12: false });
         draw();
-        toast('격자 지도와 로봇 시작 위치를 저장했습니다.', 'ok');
+        toast(res && res.robot_placed_at_start
+          ? '격자 지도를 저장하고, 로봇 위치를 시작점으로 지정했습니다.'
+          : '격자 지도를 저장했습니다. 로봇 위치는 그대로입니다.', 'ok');
       } catch (e) {
         toast(e.message, 'error');
       }

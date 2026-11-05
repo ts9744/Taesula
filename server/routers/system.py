@@ -44,5 +44,7 @@ def get_status():
     return {
         "robot_status": robot_db_status,
         "current_command": state.current_command,
-        "current_path": state.current_path
+        "current_path": state.current_path,
+        "mission": getattr(state, "mission", None),            # deliver / return / None
+        "current_item_qr": getattr(state, "current_item_qr", None)
     }

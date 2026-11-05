@@ -186,6 +186,18 @@ def get_route_by_qr(qr_code: str):
     path_list = [[x, y] for x, y in path]
     command_path = path_to_commands(path, start_direction)
 
+    # 이전 배송이 끝나기 전에 새 배송으로 덮어쓰면, 이전 물품은 arrived 로 바뀔 기회가 없어
+    # moving 에 계속 남는다. 대기 상태로 되돌린다.
+    previous_qr = state.current_item_qr
+    if previous_qr and previous_qr != item_qr_code:
+        conn = get_db()
+        conn.execute(
+            "UPDATE items SET status = 'waiting' WHERE qr_code = ? AND status = 'moving'",
+            (previous_qr,)
+        )
+        conn.commit()
+        conn.close()
+
     # 9. /next-command API에서 순차적으로 가져갈 수 있도록 명령 경로 저장
     state.current_path = command_path.copy()
     state.goal = goal

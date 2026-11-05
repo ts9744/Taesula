@@ -38,8 +38,6 @@ function clearAll() { list = []; save(); }
 
 // ---------- 상태 감시 ----------
 // 꼭 필요한 것만 알린다: 출발(배송 시작) · 도착 · 장애물 감지 · 오류 · 서버 연결 끊김
-const ITEM_MOVING = new Set(['moving', 'delivering']);
-
 let lastRobot;          // 직전 로봇 상태 (undefined = 아직 모름)
 let cargo = null;       // 지금 싣고 가는 물품 { name, where }
 let zones = {};         // 목적지 id → 구역 이름
@@ -47,21 +45,29 @@ let failures = 0;
 let offline = false;
 let started = false;
 
-// 지금 이동 중인 물품을 찾는다 (없으면 null)
-async function findCargo() {
+// 서버가 알려 준 지금 옮기는 물품(QR)을 찾는다 (없으면 null)
+// DB에서 status 가 moving 인 물품을 찾으면, 이전 배송에서 남은 물품이 잘못 잡힐 수 있다.
+async function findCargo(qr) {
+  if (!qr) return null;
   try {
-    const it = (await api.items()).find((i) => ITEM_MOVING.has(i.status));
+    const it = (await api.items()).find((i) => i.qr_code === qr);
     return it ? { name: it.name, where: zones[it.destination_id] || `목적지 ${it.destination_id}` } : null;
   } catch { return null; }
 }
 
-async function onRobotChange(prev, st) {
+async function onRobotChange(prev, st, s) {
   if (st === 'moving' && prev !== 'obstacle_detected' && prev !== 'stopped') {
     // 장애물로 잠깐 멈췄다 다시 가는 것은 새 출발로 치지 않는다
-    cargo = await findCargo();
+    if (s.mission === 'return') {
+      cargo = { returning: true };
+      notify('info', 'SIDA 복귀', '시작점으로 돌아가고 있습니다.');
+      return;
+    }
+    cargo = await findCargo(s.current_item_qr);
     notify('info', 'SIDA 출발', cargo ? `${cargo.name}을(를) ${cargo.where}(으)로 옮기기 시작했습니다.` : '목적지로 이동을 시작했습니다.');
   } else if (st === 'idle' && (prev === 'moving' || prev === 'obstacle_detected')) {
-    notify('ok', 'SIDA 도착', cargo ? `${cargo.name}을(를) ${cargo.where}에 옮겼습니다.` : '이동을 마치고 대기 중입니다.');
+    if (cargo && cargo.returning) notify('ok', 'SIDA 복귀 완료', '시작점에 도착했습니다.');
+    else notify('ok', 'SIDA 도착', cargo ? `${cargo.name}을(를) ${cargo.where}에 옮겼습니다.` : '이동을 마치고 대기 중입니다.');
     cargo = null;
   } else if (st === 'obstacle_detected') {
     notify('warn', '장애물 감지', 'SIDA 앞에 장애물이 있습니다. 경로를 확인하세요.');
@@ -78,7 +84,7 @@ async function checkStatus() {
     const st = (s.robot_status || {}).status;
     const prev = lastRobot;
     lastRobot = st;
-    if (prev !== undefined && st !== prev) await onRobotChange(prev, st);
+    if (prev !== undefined && st !== prev) await onRobotChange(prev, st, s);
   } catch {
     failures += 1;
     // 잠깐 끊긴 것은 무시하고, 세 번 연속(약 9초) 실패하면 한 번만 알린다

@@ -41,7 +41,7 @@ def find_start_cells():
     conn.close()
 
     if not row or row[0] is None:
-        return None
+        return []
 
     raw_grid = json.loads(row[0])
     return [(x, y) for y, cells in enumerate(raw_grid) for x, value in enumerate(cells) if value == 2]
