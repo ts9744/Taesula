@@ -32,8 +32,8 @@ router = APIRouter()
 AUTO_RETURN_DELAY_SEC = 10.0
 
 
-def load_home():
-    """raw_grid 에서 시작점(값 2) 칸을 찾아 (x, y) 0부터 시작하는 좌표로 돌려준다. 없으면 None."""
+def find_start_cells():
+    """raw_grid 에서 시작점(값 2) 칸을 모두 찾는다. [(x, y), ...] 0부터 시작, 행 우선 순서."""
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT raw_grid FROM grid_map WHERE id = 1")
@@ -44,11 +44,17 @@ def load_home():
         return None
 
     raw_grid = json.loads(row[0])
-    for y, cells in enumerate(raw_grid):
-        for x, value in enumerate(cells):
-            if value == 2:
-                return (x, y)
-    return None
+    return [(x, y) for y, cells in enumerate(raw_grid) for x, value in enumerate(cells) if value == 2]
+
+
+def load_home():
+    """시작점(홈) 칸 (x, y) 0부터 시작. 없으면 None.
+
+    앱(grid.js)과 GUI(gridMap.py)는 지도를 불러올 때 값 2 중 '마지막' 칸을 시작점으로 쓰고,
+    저장할 때 그 칸을 robot_status 에 넣는다. 같은 규칙으로 마지막 칸을 쓴다.
+    """
+    cells = find_start_cells()
+    return cells[-1] if cells else None
 
 
 def schedule_return(now=None):
@@ -151,10 +157,12 @@ def return_home():
 
 @router.get("/robot/home")
 def get_home():
-    home = load_home()
+    cells = find_start_cells()
+    home = cells[-1] if cells else None
     return_at = getattr(state, "return_at", None)
     return {
         "home": None if home is None else [home[0] + 1, home[1] + 1],   # robot/status 와 같이 1부터
+        "start_cells": [[x + 1, y + 1] for x, y in cells],             # 2개 이상이면 격자 탭에서 다시 저장 필요
         "mission": getattr(state, "mission", None),                    # deliver / return / None
         "auto_return_in_sec": None if return_at is None else max(0, round(return_at - time.time())),
     }
