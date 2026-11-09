@@ -10,9 +10,9 @@ import math
 import time
 
 # 현장 치수 (실제 로봇으로 재서 맞출 것)
-CELL_CM = 50.0           # 한 칸
-SENSOR_OFFSET_CM = 10.0  # 센서에서 로봇 중심까지
-DETECT_CM = 100.0        # 장애물 탐지 범위(약 두 칸)
+CELL_CM = 34.0           # 한 칸
+SENSOR_OFFSET_CM = 10.5  # 센서에서 로봇 중심까지
+DETECT_CM = 70.0        # 장애물 탐지 범위(약 두 칸)
 
 # route.py 의 path_to_commands(start_direction="north") 와 동일한 대응
 MOVE_DELTA = {

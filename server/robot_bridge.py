@@ -40,6 +40,29 @@ def api_post(path, body):
     r.raise_for_status()
     return r.json()
 
+CELL_CM = 34.0
+FORWARD_RUN_MS = 1000
+
+
+def report_obstacle(reply):
+    """ESP32 'OBSTACLE <방향> <끝낸 칸 수> <움직인 ms> <거리cm>' -> 서버 보고"""
+    try:
+        _, direction, cells_done, ran_ms, dist = reply.split()
+        cells_done = int(cells_done)
+        moved_cm = (cells_done + int(ran_ms) / FORWARD_RUN_MS) * CELL_CM
+        api_post("/robot/obstacle", {
+            "direction": direction,
+            "distance_cm": float(dist),
+            "moved_cm": moved_cm,
+            "completed": False,
+            "cells_done": cells_done,
+        })
+        print("obstacle reported:", reply)
+        return True
+    except (ValueError, requests.RequestException) as e:
+        print("obstacle report error:", e)
+        return False
+
 
 def set_link(connected, message=""):
     if link["connected"] != connected or link["message"] != message:
@@ -87,6 +110,8 @@ def send_and_wait(ser, line, expect, timeout):
             print("ESP32:", reply)
             if reply == expect:
                 return "ok"
+            if reply.startswith("OBSTACLE"):
+                return reply
             if reply.startswith("ERR"):
                 return "err"
             if reply == "READY":
@@ -187,6 +212,10 @@ def run(ser):
             # 이동 도중 끊김: 실제로 몇 칸 갔는지 알 수 없다
             halt(None, f"'{line}' 이동 중 ESP32 연결 끊김")
 
+        if result.startswith("OBSTACLE"):
+            if not report_obstacle(result):
+                halt(ser, f"장애물 보고 실패 ({result})")
+            continue
         if result != "ok":
             # 다음 /next-command 를 부르면 commit_pending_move()가
             # 이 이동을 완료로 처리하므로, 여기서 멈춰야 위치가 어긋나지 않는다.
