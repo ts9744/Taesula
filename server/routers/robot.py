@@ -75,6 +75,9 @@ class Esp32Report(BaseModel):
 
 @router.post("/robot/esp32")
 def report_esp32(report: Esp32Report):
+    # 상태가 바뀔 때만 서버 로그에 남긴다 (2초마다 같은 내용이 쌓이지 않게)
+    if report.connected != esp32_link["connected"] or report.message != esp32_link["message"]:
+        print(f"[esp32] connected={report.connected} {report.message}", flush=True)
     esp32_link["connected"] = report.connected
     esp32_link["message"] = report.message
     esp32_link["reported_at"] = time.time()
