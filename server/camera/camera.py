@@ -30,12 +30,19 @@ def get_camera():
 
     if camera is None:
         cam = Picamera2()
-        config = cam.create_preview_configuration(
-            main={"size": (1280, 720), "format": "RGB888"}
-        )
-        cam.configure(config)
-        cam.start()
-        time.sleep(1)
+        try:
+            config = cam.create_preview_configuration(
+                main={"size": (1280, 720), "format": "RGB888"}
+            )
+            cam.configure(config)
+            cam.start()
+            time.sleep(1)
+        except Exception:
+            try:
+                cam.close()
+            except Exception:
+                pass
+            raise
         camera = cam   # 초기화가 끝난 뒤에만 전역에 넣는다
 
     return camera
