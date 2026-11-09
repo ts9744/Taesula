@@ -89,6 +89,8 @@ def send_and_wait(ser, line, expect, timeout):
                 return "ok"
             if reply.startswith("ERR"):
                 return "err"
+            if reply == "READY":
+                return "reset"   # 이동 중 ESP32 재부팅(브라운아웃 등)
             # 그 외(READY, 이전 명령의 늦은 DONE 등)는 무시
         return "timeout"
     except (serial.SerialException, OSError) as e:
@@ -155,12 +157,14 @@ def run(ser):
 
         # 경로 끝의 stop: 정지 후 도착 처리
         if direction == "stop":
-            send_and_wait(ser, "stop", "DONE stop 0", 3)
             try:
-                api_post(
-                    "/command/done",
-                    {"command": "stop", "steps": 0, "result": "done"},
-                )
+                result = send_and_wait(ser, "stop", "DONE stop 0", 3)
+            except SerialLost:
+                halt(None, "도착 stop 전송 중 ESP32 연결 끊김")
+            if result != "ok":
+                halt(ser, f"도착 stop 실패 ({result})")
+            try:
+                api_post("/command/done", {"command": "stop", "steps": 0, "result": "done"})
                 print("arrived")
             except requests.RequestException as e:
                 print("done report error:", e)
