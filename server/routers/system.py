@@ -46,5 +46,6 @@ def get_status():
         "current_command": state.current_command,
         "current_path": state.current_path,
         "mission": getattr(state, "mission", None),            # deliver / return / None
-        "current_item_qr": getattr(state, "current_item_qr", None)
+        "current_item_qr": getattr(state, "current_item_qr", None),
+        "placed_at": getattr(state, "placed_at", 0.0),
     }

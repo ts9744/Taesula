@@ -28,6 +28,9 @@ link = {"connected": False, "message": MSG_NOT_CONNECTED}
 class SerialLost(Exception):
     pass
 
+class Resume(Exception):
+    """halt 후 '시작점에 놓기'가 확인되어 다시 시작한다."""
+    pass
 
 def api_get(path):
     r = requests.get(f"{API}{path}", headers=HEADERS, timeout=5)
@@ -121,19 +124,36 @@ def send_and_wait(ser, line, expect, timeout):
     except (serial.SerialException, OSError) as e:
         raise SerialLost(str(e))
 
+def wait_for_placement(halted_at):
+    """앱에서 '시작점에 놓기'를 할 때까지 기다린다. (서버와 브리지가 같은 Pi라 시각 비교가 가능)"""
+    while True:
+        time.sleep(2)
+        try:
+            st = api_get("/status")
+        except requests.RequestException:
+            continue
+        if st.get("placed_at", 0) > halted_at:
+            return
 
 def halt(ser, reason):
-    """로봇을 세우고 브리지를 멈춘다. 위치가 어긋났을 수 있으므로 수동 확인 필요."""
+    """로봇을 세우고, 사람이 위치를 맞출 때까지 기다린 뒤 다시 시작한다."""
+    halted_at = time.time()
     if ser is not None:
         try:
             send_and_wait(ser, "stop", "DONE stop 0", 3)
         except SerialLost:
             pass
-    msg = f"로봇이 정지되었습니다({reason}). 로봇 위치를 확인해 DB 위치를 맞춘 뒤 브리지를 다시 시작하세요."
+        try:
+            ser.close()
+        except Exception:
+            pass
+    msg = f"로봇이 정지되었습니다({reason}). 로봇을 시작점에 놓고 '시작점에 놓기'를 누르면 다시 시작합니다."
     set_link(False, msg)
     print("HALT:", reason)
-    while True:
-        time.sleep(60)
+
+    wait_for_placement(halted_at)
+    print("RESUME: 시작점 재배치 확인, 다시 연결합니다")
+    raise Resume()
 
 
 def open_esp32():
@@ -237,7 +257,7 @@ def main():
         set_link(True, "")
         try:
             run(ser)
-        except SerialLost as e:
+        except (SerialLost, Resume) as e:
             print("ESP32 disconnected:", e)
             set_link(False, MSG_NOT_CONNECTED)
             try:
