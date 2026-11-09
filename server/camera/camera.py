@@ -2,6 +2,7 @@ import cv2
 import time
 import asyncio
 import concurrent.futures
+import threading
 from threading import Lock
 from fastapi import HTTPException
 
@@ -17,6 +18,7 @@ STREAM_SIZE = (480, 270)   # 스트림 해상도 (QR 인식은 원본 1280x720 �
 STREAM_QUALITY = 60        # JPEG 품질 (기본 95)
 STREAM_FPS = 15            # 초당 프레임 수
 CAPTURE_TIMEOUT = 3        # 프레임 대기 최대 시간(초)
+camera_closing = None   # 망가진 카메라를 정리 중인 스레드
 
 # Python 3.11+ 에서는 둘이 같은 클래스지만, 버전 차이에 대비해 둘 다 잡는다
 CAPTURE_TIMEOUT_ERRORS = (TimeoutError, concurrent.futures.TimeoutError)
@@ -47,25 +49,38 @@ def get_camera():
 
     return camera
 
-
 def _reset_camera():
-    """타임아웃 등으로 망가진 카메라를 닫는다. 다음 get_camera()에서 새로 연다."""
-    global camera
+    """타임아웃 등으로 망가진 카메라를 정리한다. 다음 get_camera()에서 새로 연다."""
+    global camera, camera_closing
     cam, camera = camera, None
     if cam is None:
         return
-    try:
-        cam.stop()
-    except Exception as e:
-        print("camera stop failed:", e)
-    try:
-        cam.close()
-    except Exception as e:
-        print("camera close failed:", e)
+
+    def _close():
+        # 타임아웃된 캡처 작업이 대기열 맨 앞에 남아 있으면, stop 작업이 그 뒤에서 영원히 기다린다.
+        # picamera2가 이 상황(케이블 빠짐 등)을 위해 제공하는 정리 함수
+        try:
+            cam.cancel_all_and_flush()
+        except Exception as e:
+            print("camera cancel failed:", repr(e), flush=True)
+        for fn in (cam.stop, cam.close):
+            try:
+                fn()
+            except Exception as e:
+                print(f"camera {fn.__name__} failed:", repr(e), flush=True)
+        print("camera closed", flush=True)
+
+    camera_closing = threading.Thread(target=_close, daemon=True)
+    camera_closing.start()
 
 
 def get_frame():
     with camera_lock:
+        if camera_closing is not None and camera_closing.is_alive():
+            raise HTTPException(
+                status_code=503,
+                detail="카메라를 정리하는 중입니다. 계속 이 메시지가 나오면 라즈베리파이를 재부팅하세요.",
+            )
         try:
             cam = get_camera()
         except HTTPException:
