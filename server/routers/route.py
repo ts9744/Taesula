@@ -70,13 +70,68 @@ def direction_to_move_command(target_direction, start_direction):
     return "stop"
 
 
+def robot_busy():
+    """배송·도착 후 대기·복귀 중이거나, 대기열에 먼저 들어온 물품이 있으면 True.
+    이때 새로 인식한 물품은 바로 출발하지 않고 대기열 뒤에 선다."""
+    return (
+        getattr(state, "mission", None) is not None
+        or getattr(state, "return_at", None) is not None
+        or bool(state.current_path)
+        or getattr(state, "pending_move", None) is not None
+        or bool(state.delivery_queue)
+    )
+
+
+def enqueue(qr_code):
+    """물품을 대기열 뒤에 넣는다. 등록되지 않은 QR은 넣지 않는다."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM items WHERE qr_code = ?", (qr_code,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return {"message": "item not found"}
+
+    cursor.execute("UPDATE items SET status = 'queued' WHERE qr_code = ?", (qr_code,))
+    conn.commit()
+    conn.close()
+
+    state.delivery_queue.append(qr_code)
+    return {
+        "message": "queued",
+        "qr_code": qr_code,
+        "item_name": row[0],
+        "queue_position": len(state.delivery_queue),
+        "current_qr": state.current_item_qr,
+    }
+
+
 @router.get("/route/{qr_code}")
 def get_route_by_qr(qr_code: str):
-    # 같은 물품을 이미 운반 중이면 경로를 새로 만들지 않는다
-    # (여러 화면에서 같은 QR을 동시에 인식하는 경우)
-    if state.current_item_qr == qr_code and (state.current_path or state.pending_move):
-        return {"message": "already delivering", "qr_code": qr_code}
+    with state.lock:
+        # 같은 물품을 이미 운반 중이면 경로를 새로 만들지 않는다
+        # (여러 화면에서 같은 QR을 동시에 인식하는 경우)
+        if state.current_item_qr == qr_code and (state.current_path or state.pending_move):
+            return {"message": "already delivering", "qr_code": qr_code}
 
+        if qr_code in state.delivery_queue:
+            return {
+                "message": "already queued",
+                "qr_code": qr_code,
+                "queue_position": state.delivery_queue.index(qr_code) + 1,
+            }
+
+        # 다른 배송이 진행 중이면 대기열로.
+        # 지금 배송 -> 도착 -> 시작점 복귀까지 끝난 뒤 시작점에서 출발한다 (home.maybe_start_queued)
+        if robot_busy():
+            return enqueue(qr_code)
+
+        return start_delivery(qr_code)
+
+
+def start_delivery(qr_code):
+    """로봇의 현재 위치(DB)에서 물품 목적지까지 경로를 만들고 배송을 시작한다.
+    /route 와 대기열 출발(home.maybe_start_queued)이 함께 쓴다. state.lock 안에서 부른다."""
     # 이동 중에 새 경로를 만들면 진행 중인 이동이 위치에 반영되지 않아 DB 위치가 어긋난다.
     # 브리지가 이미 보낸 이동은 끝난 것으로 먼저 반영하고, 그 칸을 시작점으로 쓴다.
     # (이동이 실패하면 브리지가 halt 하므로 이후 경로는 실행되지 않는다)

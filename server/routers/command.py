@@ -38,9 +38,16 @@ def has_move_command(path):
 
 @router.get("/next-command")
 def get_next_command():
+    # /route 가 경로를 바꾸는 중에 명령을 꺼내지 않도록 같은 lock 을 쓴다
+    with state.lock:
+        return _next_command()
+
+
+def _next_command():
     obstacle.commit_pending_move()
     obstacle.try_retry()
     home.maybe_auto_return()
+    home.maybe_start_queued()      # 대기열 물품: 복귀까지 끝나면 시작점에서 출발
 
     if not state.current_path:
         state.current_command = "stop"
@@ -81,6 +88,11 @@ def get_next_command():
 
 @router.post("/command/done")
 def command_done(report: CommandDoneRequest):
+    with state.lock:
+        return _command_done(report)
+
+
+def _command_done(report: CommandDoneRequest):
     conn = get_db()
     cursor = conn.cursor()
 

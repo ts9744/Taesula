@@ -152,6 +152,7 @@ export async function busy(button, task) {
 // ---------- 상태 표시 ----------
 const ITEM_STATUS = {
   waiting: ['대기', ''],
+  queued: ['대기열', 'move'],
   moving: ['이동 중', 'move'],
   delivering: ['이동 중', 'move'],
   done: ['완료', 'done'],

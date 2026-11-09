@@ -266,7 +266,34 @@ export default {
       );
     }
 
+    // 다른 배송이 진행 중이라 대기열에 들어갔을 때 (실패가 아니다)
+    function renderQueued(qr, route) {
+      const pos = route.queue_position;
+      result.replaceChildren(
+        head(h("span", { class: "badge move" }, pos ? `대기열 ${pos}번` : "대기열")),
+        kv([
+          ["물품명", route.item_name || qr],
+          ["QR 코드", qr, true],
+        ]),
+        h(
+          "p",
+          { style: { margin: 0, fontSize: "14px", lineHeight: 1.6 } },
+          "지금 배송 중인 물품이 도착하고 SIDA가 시작점으로 돌아오면, 시작점에서 이 물품을 싣고 자동으로 출발합니다.",
+        ),
+        btn("다음 물품 인식", {
+          kind: "secondary",
+          icon: "scan",
+          block: true,
+          onClick: start,
+        }),
+      );
+    }
+
     function renderRoute(qr, route) {
+      if (route.message === "queued" || route.message === "already queued") {
+        renderQueued(qr, route);
+        return;
+      }
       if (route.message !== "route found") {
         renderError(
           qr,

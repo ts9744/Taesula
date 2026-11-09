@@ -23,13 +23,16 @@ from server import state
 from server.database import get_db, load_grid_from_db
 from server.replan_logic import MOVE_DELTA, plan_with_release
 from server.routers import obstacle
-from server.routers.route import path_to_commands
+from server.routers.route import path_to_commands, start_delivery
 
 
 router = APIRouter()
 
 # 목적지 도착 후 이 시간(초)만큼 기다렸다가 자동 복귀 (물건 내리는 시간). None 이면 자동 복귀 안 함.
 AUTO_RETURN_DELAY_SEC = 10.0
+
+# 대기열 물품: 로봇이 시작점에 돌아온 뒤 이 시간(초)만큼 기다렸다가 출발 (물건 싣는 시간)
+QUEUE_START_DELAY_SEC = 10.0
 
 
 def find_start_cells():
@@ -140,6 +143,60 @@ def start_return():
         "path": plan["path"],
         "command_path": plan["commands"],
     }
+
+
+def _queue_item_back_to_waiting(qr):
+    conn = get_db()
+    conn.execute("UPDATE items SET status = 'waiting' WHERE qr_code = ? AND status = 'queued'", (qr,))
+    conn.commit()
+    conn.close()
+
+
+def maybe_start_queued(now=None):
+    """/next-command 맨 앞에서 부른다. 대기열 물품을 시작점에서 순서대로 출발시킨다.
+
+    1. 이전 배송·도착 후 대기·복귀가 모두 끝날 때까지 기다린다.
+    2. 로봇이 시작점이 아니면 먼저 시작점으로 복귀시킨다. (자동 복귀를 꺼 둔 경우 등)
+    3. 시작점에 도착하면 QUEUE_START_DELAY_SEC 동안 물건을 싣고, 다음 물품 배송을 시작한다.
+    """
+    with state.lock:
+        if not state.delivery_queue:
+            state.next_start_at = None
+            return
+
+        busy = (
+            getattr(state, "mission", None) is not None
+            or getattr(state, "return_at", None) is not None
+            or bool(state.current_path)
+            or getattr(state, "pending_move", None) is not None
+        )
+        if busy:
+            state.next_start_at = None
+            return
+
+        home = load_home()
+        pos = obstacle._robot_pos()
+        if home is not None and pos is not None and tuple(pos) != tuple(home):
+            start_return()
+            return
+
+        now = time.time() if now is None else now
+        if state.next_start_at is None:
+            state.next_start_at = now + QUEUE_START_DELAY_SEC
+            return
+        if now < state.next_start_at:
+            return
+
+        state.next_start_at = None
+        while state.delivery_queue:
+            qr = state.delivery_queue.pop(0)
+            result = start_delivery(qr)
+            if result.get("message") == "route found":
+                print(f"[queue] {qr} 출발 (남은 대기 {len(state.delivery_queue)}개)", flush=True)
+                return
+            # 경로가 없거나 물품이 삭제된 경우: 대기로 되돌리고 다음 물품으로
+            print(f"[queue] {qr} 출발 실패: {result.get('message')}", flush=True)
+            _queue_item_back_to_waiting(qr)
 
 
 @router.post("/robot/return-home")

@@ -129,6 +129,13 @@ def place_at_start():
             (item_qr,)
         )
 
+    # 대기열도 비운다 (사람이 초기화한 것이므로 쌓여 있던 물품은 다시 인식해야 출발)
+    for qr in getattr(state, "delivery_queue", []):
+        cursor.execute(
+            "UPDATE items SET status = 'waiting' WHERE qr_code = ? AND status = 'queued'",
+            (qr,)
+        )
+
     cursor.execute(
         "UPDATE robot_status SET current_x = ?, current_y = ?, status = 'idle' WHERE id = 1",
         (start[0] + 1, start[1] + 1)
@@ -145,6 +152,8 @@ def place_at_start():
     state.goal = None
     state.mission = None
     state.return_at = None
+    state.delivery_queue = []
+    state.next_start_at = None
     state.skip_detect = False
     state.nav_status, state.retry_count, state.probing = "idle", 0, False
     state.placed_at = time.time()          # 추가: 브리지가 이 값을 보고 halt를 푼다

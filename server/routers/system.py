@@ -1,3 +1,5 @@
+import time
+
 from fastapi import APIRouter
 from fastapi.responses import RedirectResponse
 
@@ -47,5 +49,8 @@ def get_status():
         "current_path": state.current_path,
         "mission": getattr(state, "mission", None),            # deliver / return / None
         "current_item_qr": getattr(state, "current_item_qr", None),
+        "queue": list(getattr(state, "delivery_queue", [])),          # 대기열 QR (먼저 출발할 순서)
+        "queue_start_in_sec": (None if getattr(state, "next_start_at", None) is None
+                               else max(0, round(state.next_start_at - time.time()))),
         "placed_at": getattr(state, "placed_at", 0.0),
     }
