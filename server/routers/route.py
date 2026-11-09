@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from algorithm.astar import a_star
 from server import state
 from server.database import get_db, load_grid_from_db
+from server.routers import obstacle
 
 
 router = APIRouter()
@@ -71,6 +72,17 @@ def direction_to_move_command(target_direction, start_direction):
 
 @router.get("/route/{qr_code}")
 def get_route_by_qr(qr_code: str):
+    # 같은 물품을 이미 운반 중이면 경로를 새로 만들지 않는다
+    # (여러 화면에서 같은 QR을 동시에 인식하는 경우)
+    if state.current_item_qr == qr_code and (state.current_path or state.pending_move):
+        return {"message": "already delivering", "qr_code": qr_code}
+
+    # 이동 중에 새 경로를 만들면 진행 중인 이동이 위치에 반영되지 않아 DB 위치가 어긋난다.
+    # 브리지가 이미 보낸 이동은 끝난 것으로 먼저 반영하고, 그 칸을 시작점으로 쓴다.
+    # (이동이 실패하면 브리지가 halt 하므로 이후 경로는 실행되지 않는다)
+    if getattr(state, "pending_move", None) is not None:
+        obstacle.commit_pending_move()
+
     conn = get_db()
     cursor = conn.cursor()
 
@@ -201,7 +213,6 @@ def get_route_by_qr(qr_code: str):
     # 9. /next-command API에서 순차적으로 가져갈 수 있도록 명령 경로 저장
     state.current_path = command_path.copy()
     state.goal = goal
-    state.pending_move = None
     state.current_item_qr = item_qr_code
     state.current_steps = 0
     state.mission = "deliver"
