@@ -96,7 +96,7 @@ def mark_dispatched(cmd, steps=1):
         return extras
 
     if cmd in HAS_SENSOR:
-        extras["detect_cm"] = DETECT_CM
+        extras["detect_cm"] = round(CELL_CM * steps + CELL_CM / 2 - SENSOR_OFFSET_CM)
         extras["check_blocked"] = _blocked_ahead(_robot_pos(), cmd)
         pos, grid = _robot_pos(), load_grid_from_db()
         if pos is not None and grid is not None:
