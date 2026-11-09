@@ -104,6 +104,7 @@ def send_and_wait(ser, line, expect, timeout):
 
         end = time.time() + timeout
         while time.time() < end:
+            check_link(ser)                 # 추가
             reply = ser.readline().decode(errors="ignore").strip()
             if not reply:
                 continue
@@ -121,13 +122,21 @@ def send_and_wait(ser, line, expect, timeout):
     except (serial.SerialException, OSError) as e:
         raise SerialLost(str(e))
 
+def check_link(ser):
+    """USB가 빠졌거나(링크 사라짐), 빠졌다 다시 꽂혀 다른 장치(ttyUSB1 등)가 됐으면 SerialLost.
+    pyserial은 USB가 빠져도 예외 없이 빈 응답만 줄 수 있어서 직접 확인한다."""
+    if not os.path.exists(PORT) or os.path.realpath(PORT) != getattr(ser, "dev", None):
+        raise SerialLost("USB 연결 끊김 또는 재연결됨")
 
 def halt(ser, reason):
-    """로봇을 세우고 브리지를 멈춘다. 위치가 어긋났을 수 있으므로 수동 확인 필요."""
     if ser is not None:
         try:
             send_and_wait(ser, "stop", "DONE stop 0", 3)
         except SerialLost:
+            pass
+        try:
+            ser.close()
+        except Exception:
             pass
     msg = f"로봇이 정지되었습니다({reason}). 로봇 위치를 확인해 DB 위치를 맞춘 뒤 브리지를 다시 시작하세요."
     set_link(False, msg)
@@ -145,6 +154,7 @@ def open_esp32():
             continue
         try:
             ser = serial.Serial(PORT, BAUD, timeout=0.5)
+            ser.dev = os.path.realpath(PORT)      # 열었을 때의 실제 장치(ttyUSB0 등)
             time.sleep(2)               # 포트 열 때 ESP32 리셋 대기
             flush_esp32(ser)
             return ser
@@ -157,6 +167,7 @@ def open_esp32():
 def run(ser):
     while True:
         # 명령을 꺼내기 전에 연결부터 확인 (꺼낸 뒤 끊기면 그 명령이 사라진다)
+        check_link(ser)                 # 기존: if not os.path.exists(PORT): raise SerialLost(...)
         if not os.path.exists(PORT):
             raise SerialLost("port removed")
 
