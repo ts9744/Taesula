@@ -33,6 +33,10 @@ const int RR_IN2 = 23;
 const unsigned long FORWARD_RUN_MS = 1000;
 const unsigned long STRAFE_RUN_MS  = 1000;
 
+// 칸 출발 전 장애물 점검 (칸 34cm 기준: 다음 칸 장애물 6.5~34cm / 지도 벽 40.5cm -> 37cm)
+const long BLOCK_DISTANCE_CM = 37;
+const int PRECHECK_SAMPLES = 3;
+
 // PWM 속도
 const int MOTOR_SPEED  = 150;
 const int STRAFE_SPEED = 200;
@@ -56,6 +60,7 @@ void runTimed(void (*action)(), unsigned long ms);
 void handleLine(String line);
 
 long getDistanceCm();
+long precheckDistanceCm();
 
 
 // ===============================
@@ -219,7 +224,20 @@ void handleLine(String line) {
   // steps 만큼 반복
   // -------------------------------
   for (int i = 0; i < steps; i++) {
-
+    // 칸 출발 전 점검: 앞쪽에 장애물이 있으면 출발하지 않고 보고한다
+    if (dir == "forward") {
+      long pd = precheckDistanceCm();
+      if (pd > 0 && pd <= BLOCK_DISTANCE_CM) {
+        Serial.println();
+        Serial.print("OBSTACLE ");
+        Serial.print(dir);
+        Serial.print(' ');
+        Serial.print(i);
+        Serial.print(" 0 ");
+        Serial.println(pd);
+        return;
+      }
+    }
     runTimed(action, runMs);
   }
 
@@ -520,4 +538,38 @@ long getDistanceCm() {
 
 
   return duration * 0.034 / 2;
+}
+
+// ===============================
+// 칸 출발 전 점검용 거리
+// 3번 재서 유효한 값 중 가운데 값을 돌려준다. 하나도 못 쟀으면 -1.
+// ===============================
+long precheckDistanceCm() {
+  long v[PRECHECK_SAMPLES];
+  int n = 0;
+
+  for (int k = 0; k < PRECHECK_SAMPLES; k++) {
+    long d = getDistanceCm();
+    if (d > 0) {
+      v[n++] = d;
+    }
+    delay(30);
+  }
+
+  if (n == 0) {
+    return -1;
+  }
+
+  // 작은 순서로 정렬
+  for (int a = 0; a < n - 1; a++) {
+    for (int b = a + 1; b < n; b++) {
+      if (v[b] < v[a]) {
+        long t = v[a];
+        v[a] = v[b];
+        v[b] = t;
+      }
+    }
+  }
+
+  return v[n / 2];
 }
