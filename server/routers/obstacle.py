@@ -28,7 +28,7 @@ manual_blocked = set()      # 사람이 앱에서 표시한 칸 - 30초가 지�
 BLOCK_TTL_SEC = 30.0        # 막은 지 이 시간이 지나면 자동으로 푼다 (그 길로 가 보다가 아직 있으면 다시 막힌다)
 RETRY_SEC = 10.0            # 길이 없을 때 재시도 간격
 MAX_RETRIES = 4             # 이만큼 해도 안 되면 사람이 앱에서 직접 처리 (manual_required)
-HAS_SENSOR = ("forward", "left", "right")   # 앞/왼쪽/오른쪽 센서만 있다. 뒤로 갈 때는 감지 안 함
+HAS_SENSOR = ("forward", "backward", "left", "right")   # 네 방향 모두 센서가 있다.
 
 
 class ObstacleReport(BaseModel):
