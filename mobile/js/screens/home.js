@@ -80,7 +80,7 @@ export default {
           '격자 지도가 아직 없습니다. 격자 탭에서 만들어 주세요.'));
         return;
       }
-      
+
       const shown = grid.map((row) => row.slice());
       for (const b of blocked) {
         const r = b.y - 1, c = b.x - 1;
@@ -88,6 +88,25 @@ export default {
       }
       const next = gridView(shown, { dark: true, robot });
       next.setAttribute('aria-label', '공장 격자 지도와 로봇 위치');
+      const keys = new Set(blocked.map((b) => `${b.x},${b.y}`));
+      next.style.cursor = 'pointer';
+      next.addEventListener('click', async (e) => {
+        const cell = e.target.closest('.cell');
+        if (!cell) return;
+        const idx = Array.prototype.indexOf.call(next.children, cell);
+        const cols = grid[0].length;
+        const r = Math.floor(idx / cols), c = idx % cols;
+        const v = grid[r][c];
+        if (v === 1) { toast('지도 장애물은 격자 탭에서 수정하세요.', 'error'); return; }
+        if (v === 2 || v === 3) { toast('시작점과 목적지 칸에는 표시할 수 없습니다.', 'error'); return; }
+        const isBlocked = keys.has(`${c + 1},${r + 1}`);
+        try {
+          const res = await api.manualBlock(c + 1, r + 1, !isBlocked);
+          if (res.status === 'ok') toast(isBlocked ? '장애물을 해제했습니다.' : '장애물을 표시했습니다.', 'ok');
+          else toast(res.reason || '표시하지 못했습니다.', 'error');
+          pollStatus();
+        } catch (err) { toast(err.message, 'error'); }
+      });
       mapEl.replaceWith(next);
       mapEl = next;
     }
@@ -160,14 +179,16 @@ function openSettings() {
     placeholder: `비워 두면 ${location.origin}`, value: getServerUrl(),
   });
   let close;
-  const save = btn('저장', { kind: 'primary', block: true, onClick: () => {
-    const v = input.value.trim();
-    if (v && !/^https?:\/\/[^\s/]+/i.test(v)) { toast('http:// 또는 https:// 로 시작하는 주소를 입력하세요.', 'error'); return; }
-    setServerUrl(v);
-    close();
-    toast('서버 주소를 저장했습니다.', 'ok');
-    window.dispatchEvent(new HashChangeEvent('hashchange'));
-  } });
+  const save = btn('저장', {
+    kind: 'primary', block: true, onClick: () => {
+      const v = input.value.trim();
+      if (v && !/^https?:\/\/[^\s/]+/i.test(v)) { toast('http:// 또는 https:// 로 시작하는 주소를 입력하세요.', 'error'); return; }
+      setServerUrl(v);
+      close();
+      toast('서버 주소를 저장했습니다.', 'ok');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    }
+  });
   close = openSheet({
     title: '서버 설정',
     body: h('div', { style: { display: 'flex', flexDirection: 'column', gap: '14px' } },
