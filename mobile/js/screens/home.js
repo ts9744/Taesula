@@ -2,6 +2,9 @@
 import { api, getServerUrl, setServerUrl } from '../api.js';
 import { h, icon, btn, busy, toast, openSheet, field, gridView, mergeLocations, itemBadge, robotStatusLabel, sida, sidaFace } from '../ui.js';
 
+// 서버 obstacle.py 의 MAX_RETRIES 와 같은 값 (자동 재시도 횟수)
+const MAX_RETRIES = 4;
+
 export default {
   title: '홈',
 
@@ -26,6 +29,40 @@ export default {
     const pos = h('span', { class: 'v big' }, '—');
     const state = h('span', { class: 'v' }, '—');
     const stage = h('div', { class: 'robot-stage' }, sida('idle', 190));
+
+    // --- 길이 막혔을 때 안내 (no_path: 자동 재시도 중 / manual_required: 사람이 처리)
+    const navText = h('p', { class: 'msg' });
+    const resumeBtn = btn('다시 시도', { kind: 'primary', icon: 'refresh', block: true });
+    resumeBtn.hidden = true;
+    resumeBtn.addEventListener('click', () => busy(resumeBtn, async () => {
+      try {
+        const r = await api.resume();
+        if (r.status === 'resumed') toast('새 경로로 다시 출발합니다.', 'ok');
+        else toast('아직 갈 수 있는 길이 없습니다. 장애물과 직접 표시한 칸을 확인하세요.', 'error');
+        pollStatus();
+      } catch (e) { toast(e.message, 'error'); }
+    }));
+    const navAlert = h('div', { class: 'nav-alert', role: 'status' },
+      h('div', { class: 'row' }, icon('alert', 18, 2), navText), resumeBtn);
+    navAlert.hidden = true;
+
+    function setNav(ob) {
+      const nav = ob ? ob.nav_status : 'idle';
+      if (nav === 'no_path') {
+        navText.textContent = `길이 막혀 다른 길을 찾는 중입니다 (${ob.retry_count || 0}/${MAX_RETRIES})`;
+        navAlert.classList.remove('manual');
+        resumeBtn.hidden = true;
+        navAlert.hidden = false;
+      } else if (nav === 'manual_required') {
+        navText.textContent = '경로를 찾지 못했습니다. 장애물을 치우고, 지도에 직접 표시한 칸이 있으면 해제한 뒤 다시 시도를 눌러 주세요.';
+        navAlert.classList.add('manual');
+        resumeBtn.hidden = false;
+        navAlert.hidden = false;
+      } else {
+        navAlert.hidden = true;
+      }
+    }
+
     let stageState = 'idle';
     const robotCard = h('section', { class: 'robot-card', 'aria-label': '로봇 SIDA 상태' },
       h('div', { class: 'head' }, h('span', { class: 'name' }, 'SIDA', h('small', null, '물류 로봇')), conn),
@@ -34,7 +71,8 @@ export default {
         mapBox,
         h('div', { class: 'robot-info' },
           h('div', null, h('span', { class: 'k' }, '현재 위치'), pos),
-          h('div', null, h('span', { class: 'k' }, '상태'), state))));
+          h('div', null, h('span', { class: 'k' }, '상태'), state))),
+      navAlert);
 
     // 이동 중이면 카트에 탄 SIDA, 아니면 카트에서 내린 SIDA
     function setStage(status) {
@@ -157,12 +195,14 @@ export default {
         state.textContent = `${robotStatusLabel(r.status)}${remaining ? ` · 남은 명령 ${remaining}` : ''}`;
         setMap(hasPos ? { x: r.current_x - 1, y: r.current_y - 1 } : null, blocked);
         setStage(r.status);
+        setNav(ob);
       } catch {
         if (!alive) return;
         conn.className = 'conn off';
         conn.textContent = '연결 끊김';
         setMap(null);
         setStage('offline');
+        setNav(null);
       }
     }
 

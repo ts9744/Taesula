@@ -113,6 +113,7 @@ export const api = {
   // 로봇
   status: () => request("GET", "/status", { timeout: 4000 }),
   obstacles: () => request("GET", "/robot/obstacles", { timeout: 4000 }),
+  resume: () => request("POST", "/robot/resume"),
     manualBlock: (x, y, blocked) =>
     request("POST", "/robot/manual-block", { json: { x, y, blocked } }),
   placeAtStart: () => request("POST", "/robot/place-at-start"),

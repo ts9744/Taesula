@@ -551,6 +551,42 @@ a:focus-visible,
   font-weight: 600;
 }
 
+/* 길이 막혔을 때 안내 (홈 로봇 카드 안) */
+.nav-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(244, 185, 120, 0.14);
+  border: 1px solid rgba(244, 185, 120, 0.4);
+  color: #fde3c4;
+}
+.nav-alert .row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.nav-alert .row svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.nav-alert .msg {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.nav-alert .btn {
+  background: #ffffff;
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+.nav-alert.manual {
+  background: rgba(240, 138, 122, 0.16);
+  border-color: rgba(240, 138, 122, 0.5);
+  color: #ffd9d2;
+}
+
 .quick {
   display: flex;
   gap: 10px;
