@@ -104,6 +104,7 @@ def get_esp32():
 
 # ---------- 로봇을 시작점에 두기 ----------
 @router.post("/robot/place-at-start")
+@state.locked
 def place_at_start():
     """사람이 로봇을 시작점에 직접 갖다 놓았을 때.
 

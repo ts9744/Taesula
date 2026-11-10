@@ -200,6 +200,7 @@ def maybe_start_queued(now=None):
 
 
 @router.post("/robot/return-home")
+@state.locked
 def return_home():
     """앱/챗봇에서 '복귀'를 눌렀을 때. 자동 복귀 예약을 기다리지 않고 바로 시작한다."""
     # mission 은 /command/done 에서 도착이 확정돼야 None 이 된다.

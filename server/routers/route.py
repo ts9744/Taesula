@@ -111,7 +111,7 @@ def get_route_by_qr(qr_code: str):
     with state.lock:
         # 같은 물품을 이미 운반 중이면 경로를 새로 만들지 않는다
         # (여러 화면에서 같은 QR을 동시에 인식하는 경우)
-        if state.current_item_qr == qr_code and (state.current_path or state.pending_move):
+        if state.current_item_qr == qr_code and getattr(state, "mission", None) == "deliver":
             return {"message": "already delivering", "qr_code": qr_code}
 
         if qr_code in state.delivery_queue:

@@ -157,6 +157,7 @@ class ClearReport(BaseModel):
 
 # ---------- ESP32 가 장애물을 보고하는 곳 ----------
 @router.post("/robot/obstacle")
+@state.locked
 def report_obstacle(r: ObstacleReport):
     move = r.direction if r.direction in MOVE_DELTA else getattr(state, "pending_move", None)
     steps = max(1, getattr(state, "pending_steps", 1))
@@ -259,6 +260,7 @@ def try_retry(now=None):
 
 
 @router.post("/robot/resume")
+@state.locked
 def resume():
     """앱에서 사람이 '다시 시도'를 눌렀을 때: 막힌 칸을 모두 풀고 처음부터 길을 찾는다."""
     plan, pos = _plan_release(len(blocked_cells))
@@ -273,6 +275,7 @@ def resume():
 
 
 @router.post("/robot/clear")
+@state.locked
 def report_clear(r: ClearReport):
     """센서가 그 방향이 비어 있다고 알려 줄 때: 막아 둔 칸이 센서 값보다 가까우면(= 센서가 그 칸을 통과해 더 멀리 봤으면) 푼다."""
     pos = _robot_pos()
@@ -299,6 +302,7 @@ class ManualBlock(BaseModel):
 
 
 @router.post("/robot/manual-block")
+@state.locked
 def manual_block(m: ManualBlock):
     """앱 미니맵에서 사람이 칸을 눌러 장애물을 표시/해제한다. 표시한 칸은 30초가 지나도 풀리지 않는다."""
     cell = (m.x - 1, m.y - 1)
@@ -324,6 +328,7 @@ def manual_block(m: ManualBlock):
 
 
 @router.get("/robot/obstacles")
+@state.locked
 def get_obstacles():
     """앱 격자 표시용. 좌표는 robot/status 와 같이 1부터 센다. 앱은 1~2초마다 호출하면 된다."""
     expire_blocked()
@@ -353,6 +358,7 @@ def get_obstacles():
 
 
 @router.get("/robot/blocked")
+@state.locked
 def get_blocked():
     expire_blocked()
     return {"blocked_cells": sorted(blocked_cells),

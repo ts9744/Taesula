@@ -1,3 +1,4 @@
+import functools
 import threading
 
 current_command = "stop"
@@ -24,3 +25,13 @@ next_start_at = None    # 대기열 다음 물품 출발 예약 시각 (시작�
 
 # /route 와 /next-command 가 배송 상태를 동시에 바꾸지 않게 한다
 lock = threading.RLock()
+
+
+
+def locked(fn):
+    """배송 상태(경로, 막힌 칸, 위치)를 읽거나 바꾸는 엔드포인트에 붙인다. RLock 이라 안에서 또 잡아도 된다."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        with lock:
+            return fn(*args, **kwargs)
+    return wrapper
