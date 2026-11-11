@@ -65,10 +65,28 @@ def return_home() -> dict:
     return resp.json()
 
 
-def move_robot(direction: str) -> dict:
+MOVE_DIRECTIONS = ("forward", "backward", "left", "right")
+MOVE_MAX_STEPS = 5
+
+
+def move_robot(direction: str, steps: int = 1) -> dict:
+    # 배송과 같은 경로(/next-command -> robot_bridge -> ESP32)로 보내는 서버 엔드포인트를 쓴다.
+    direction = str(direction).strip().lower()
+    if direction not in MOVE_DIRECTIONS:
+        return {
+            "status": "rejected",
+            "message": "방향은 forward/backward/left/right 중 하나여야 합니다. 수동 이동은 정해진 칸만큼 가고 스스로 멈춥니다.",
+        }
+    try:
+        steps = int(steps)
+    except (TypeError, ValueError):
+        return {"status": "rejected", "message": "칸 수는 숫자여야 합니다."}
+    if not 1 <= steps <= MOVE_MAX_STEPS:
+        return {"status": "rejected", "message": f"한 번에 1~{MOVE_MAX_STEPS}칸까지만 움직일 수 있습니다."}
+
     resp = requests.post(
-        f"{SERVER_BASE_URL}/test-command",
-        json={"command": direction},
+        f"{SERVER_BASE_URL}/robot/manual-move",
+        json={"direction": direction, "steps": steps},
         timeout=REQUEST_TIMEOUT, headers=HEADERS,
     )
     resp.raise_for_status()
@@ -134,15 +152,23 @@ TOOL_DEFINITIONS = [
         "function": {
             "name": "move_robot",
             "description": (
-                "로봇을 한 스텝 수동으로 이동시킨다. forward=현재 바라보는 방향으로 전진, "
-                "left/right=제자리 좌/우 회전, backward=후진, stop=정지."
+                "로봇을 지정한 방향으로 steps칸 평행이동시킨다(메카넘휠, 회전하지 않음). "
+                "forward=앞(격자 위쪽), backward=뒤(격자 아래쪽), left=왼쪽으로 옆걸음, right=오른쪽으로 옆걸음. "
+                "로봇이 쉬고 있을 때만 움직이며, 가는 칸이 벽·장애물·격자 밖이면 거절된다. "
+                "결과의 status가 accepted일 때만 이동한 것이다."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "direction": {
                         "type": "string",
-                        "enum": ["forward", "backward", "left", "right", "stop"],
+                        "enum": list(MOVE_DIRECTIONS),
+                    },
+                    "steps": {
+                        "type": "integer",
+                        "description": f"이동할 칸 수 (1~{MOVE_MAX_STEPS}, 기본 1)",
+                        "minimum": 1,
+                        "maximum": MOVE_MAX_STEPS,
                     },
                 },
                 "required": ["direction"],

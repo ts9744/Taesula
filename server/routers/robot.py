@@ -1,11 +1,13 @@
 import time
+from typing import Literal
 
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from server import state
 from server.database import get_db
-from server.routers import home
+from server.replan_logic import MOVE_DELTA
+from server.routers import home, obstacle, route
 
 
 router = APIRouter()
@@ -160,3 +162,70 @@ def place_at_start():
     state.placed_at = time.time()          # 추가: 브리지가 이 값을 보고 halt를 푼다
 
     return {"status": "placed", "robot": [start[0] + 1, start[1] + 1]}
+
+
+# ---------- 수동 이동 (챗봇 move_robot) ----------
+# 배송과 같은 길로 보낸다: state.current_path -> /next-command -> robot_bridge.py -> ESP32
+# 메카넘휠 횡이동이라 로봇은 항상 격자 북쪽을 바라본다.
+#   forward = 위(북), backward = 아래(남), left = 왼쪽(서), right = 오른쪽(동) 으로 한 칸씩 평행이동
+MANUAL_MAX_STEPS = 5
+
+
+class ManualMoveRequest(BaseModel):
+    direction: Literal["forward", "backward", "left", "right"]
+    steps: int = Field(default=1, ge=1, le=MANUAL_MAX_STEPS)
+
+
+def _reject(reason, message, **extra):
+    return {"status": "rejected", "reason": reason, "message": message, **extra}
+
+
+@router.post("/robot/manual-move")
+@state.locked
+def manual_move(req: ManualMoveRequest):
+    """로봇을 지정한 방향으로 steps 칸 평행이동시킨다.
+
+    로봇이 쉬고 있을 때만 받는다. 가는 칸 중 하나라도 격자 밖, 지도 장애물, 센서/사람이 막아 둔 칸이면 거절한다.
+    받아들이면 바로 응답하고, 실제 이동은 브리지가 다음 /next-command 에서 가져가 실행한다.
+    """
+    link = get_esp32()
+    if not link["connected"]:
+        return _reject("robot_not_connected", link["message"] or "로봇(ESP32)이 연결되어 있지 않습니다.")
+
+    if route.robot_busy() or getattr(state, "nav_status", None) in ("no_path", "manual_required"):
+        return _reject("busy", "로봇이 배송·복귀 중이거나 대기 중인 작업이 있어 지금은 움직일 수 없습니다.")
+
+    pos = obstacle._robot_pos()
+    grid = obstacle._grid()             # 사람이 앱에서 표시한 칸도 장애물로 들어가 있다
+    if pos is None or grid is None:
+        return _reject("no_map", "로봇 위치나 격자 지도가 없습니다. 격자 탭에서 지도를 저장하세요.")
+
+    rows, cols = len(grid), len(grid[0])
+    dx, dy = MOVE_DELTA[req.direction]
+
+    for i in range(1, req.steps + 1):
+        x, y = pos[0] + dx * i, pos[1] + dy * i
+        cell = [x + 1, y + 1]           # 응답 좌표는 robot/status 와 같이 1부터
+        if not (0 <= x < cols and 0 <= y < rows):
+            return _reject("out_of_grid", f"{i}번째 칸이 격자 밖이라 움직일 수 없습니다.", blocked_at=cell)
+        if grid[y][x] != 0:
+            return _reject("wall", f"{i}번째 칸이 벽(장애물)이라 움직일 수 없습니다.", blocked_at=cell)
+        if (x, y) in obstacle.blocked_cells:
+            return _reject("obstacle", f"{i}번째 칸에 센서가 감지한 장애물이 있어 움직일 수 없습니다.", blocked_at=cell)
+
+    target = (pos[0] + dx * req.steps, pos[1] + dy * req.steps)
+
+    # 목적지 없는 이동: 장애물을 만나면 다시 길을 찾지 않고 그 자리에서 멈춘다 (obstacle.report_obstacle)
+    state.goal = None
+    state.current_path = [req.direction] * req.steps + ["stop"]
+    state.nav_status, state.retry_count, state.probing = "moving", 0, False
+    obstacle._save_robot(pos, "moving")
+
+    return {
+        "status": "accepted",
+        "direction": req.direction,
+        "steps": req.steps,
+        "from": [pos[0] + 1, pos[1] + 1],
+        "to": [target[0] + 1, target[1] + 1],
+        "message": "이동 명령을 로봇에 보냈습니다. 몇 초 안에 이동을 마칩니다.",
+    }

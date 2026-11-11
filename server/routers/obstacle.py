@@ -165,6 +165,8 @@ def report_obstacle(r: ObstacleReport):
     state.pending_steps = 1
 
     pos, goal, grid = _robot_pos(), getattr(state, "goal", None), _grid()
+    if goal is None and pos is not None and move in MOVE_DELTA:
+        return _stop_manual_move(r, pos, move, steps, grid)
     if pos is None or goal is None or grid is None or move not in MOVE_DELTA:
         state.current_command = "stop"
         return {"status": "ignored", "reason": "위치/목적지/격자 정보 없음"}
@@ -203,6 +205,29 @@ def report_obstacle(r: ObstacleReport):
         result["retry_in_sec"] = RETRY_SEC
     result["obstacle_cell_index"] = n
     return result
+
+
+def _stop_manual_move(r, pos, move, steps, grid):
+    """수동 이동(robot.manual_move, 목적지 없음) 중 장애물: 다시 길을 찾지 않고 지금 서 있는 칸에서 멈춘다."""
+    d = MOVE_DELTA[move]
+    k = steps if r.completed else max(0, min(r.cells_done, steps))
+    arrived = (pos[0] + d[0] * k, pos[1] + d[1] * k)
+
+    n, cell = locate_obstacle(pos, move, r.distance_cm, r.moved_cm)
+    if grid is not None and not in_known_map(grid, cell):
+        blocked_cells[cell] = time.time()         # 앱 격자에 표시되고, 30초 뒤 자동으로 풀린다
+
+    state.current_command = "stop"
+    state.current_path = []                       # 남은 칸과 끝의 stop 을 버린다 (브리지는 다음 호출에서 대기로 돌아감)
+    state.nav_status, state.retry_count, state.probing = "idle", 0, False
+    _save_robot(arrived, "idle")
+    return {
+        "status": "stopped",
+        "reason": "수동 이동 중 장애물",
+        "robot": [arrived[0] + 1, arrived[1] + 1],
+        "cell": list(cell),
+        "obstacle_cell_index": n,
+    }
 
 
 def _plan_release(release_count):

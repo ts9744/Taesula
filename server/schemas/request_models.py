@@ -16,9 +16,6 @@ class PathRequest(BaseModel):
     path: list[Direction]
 
 
-class TestCommandRequest(BaseModel):
-    command: Direction
-
 class CommandDoneRequest(BaseModel):
     # 로봇(ESP32)이 명령 실행을 마친 뒤 보내는 보고
     command: Direction
