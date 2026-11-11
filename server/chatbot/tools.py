@@ -47,11 +47,65 @@ def list_items() -> dict:
     return {"items": enriched}
 
 
-def get_robot_status() -> dict:
-    resp = requests.get(f"{SERVER_BASE_URL}/robot/status", timeout=REQUEST_TIMEOUT, headers=HEADERS)
-    resp.raise_for_status()
-    return resp.json()
+# 작은 모델이 상태 코드를 잘못 해석하지 않도록 한국어 설명으로 풀어서 넘긴다.
+ROBOT_STATE_LABEL = {
+    "idle": "대기",
+    "moving": "이동 중",
+    "obstacle_detected": "장애물 감지로 멈춤",
+}
+MISSION_LABEL = {
+    "deliver": "물품 배송 중",
+    "return": "시작점으로 복귀 중",
+}
+NAV_LABEL = {
+    "idle": "정상",
+    "moving": "정상",
+    "no_path": "장애물로 길이 막혀 자동으로 다른 길을 찾는 중",
+    "manual_required": "길을 찾지 못해 사람이 장애물을 치우고 앱에서 '다시 시도'를 눌러야 함",
+}
 
+
+def get_robot_status() -> dict:
+    # 로봇 위치·상태 + 배송/복귀 여부 + 대기열
+    resp = requests.get(f"{SERVER_BASE_URL}/status", timeout=REQUEST_TIMEOUT, headers=HEADERS)
+    resp.raise_for_status()
+    status = resp.json()
+
+    robot = status.get("robot_status") or {}
+    queue = status.get("queue") or []
+    mission = status.get("mission")
+
+    result = {
+        "position": {"x": robot.get("current_x"), "y": robot.get("current_y")},
+        "robot_state": ROBOT_STATE_LABEL.get(robot.get("status"), robot.get("status")),
+        "mission": MISSION_LABEL.get(mission, "진행 중인 작업 없음"),
+        "current_item_qr": status.get("current_item_qr"),
+        "queue": queue,
+        "queue_count": len(queue),
+        "queue_start_in_sec": status.get("queue_start_in_sec"),
+    }
+
+    # 장애물·재탐색 상태 (실패해도 위 정보로는 답할 수 있게)
+    try:
+        ob_resp = requests.get(f"{SERVER_BASE_URL}/robot/obstacles", timeout=REQUEST_TIMEOUT, headers=HEADERS)
+        ob_resp.raise_for_status()
+        ob = ob_resp.json()
+        blocked = ob.get("blocked") or []
+        result.update({
+            "navigation": NAV_LABEL.get(ob.get("nav_status"), ob.get("nav_status")),
+            "retry_count": ob.get("retry_count", 0),
+            "blocked_cells": [
+                {"x": b.get("x"), "y": b.get("y"), "marked_by_person": bool(b.get("manual"))}
+                for b in blocked
+            ],
+            "blocked_count": len(blocked),
+            "remaining_cells": len(ob.get("path") or []),
+            "goal": ob.get("goal"),
+        })
+    except requests.RequestException:
+        result["navigation"] = "장애물 정보를 가져오지 못함"
+
+    return result
 
 def start_delivery(qr_code: str) -> dict:
     resp = requests.get(f"{SERVER_BASE_URL}/route/{qr_code}", timeout=REQUEST_TIMEOUT, headers=HEADERS)
@@ -129,7 +183,10 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_robot_status",
-            "description": "로봇의 현재 좌표와 상태를 조회한다.",
+            "description": (
+                "로봇의 현재 위치와 상태, 배송·복귀 중인지, 배송 중인 물품, 대기열, "
+                "장애물로 막힌 칸과 경로 재탐색 상태, 목적지까지 남은 칸 수를 조회한다."
+            ),
             "parameters": {"type": "object", "properties": {}},
         },
     },
