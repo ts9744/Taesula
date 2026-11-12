@@ -191,8 +191,9 @@ export default {
         conn.textContent = '연결됨';
         const hasPos = r.current_x != null && r.current_y != null;
         pos.textContent = hasPos ? `(${r.current_x}, ${r.current_y})` : '—';
-        const remaining = (s.current_path || []).length;
-        state.textContent = `${robotStatusLabel(r.status)}${remaining ? ` · 남은 명령 ${remaining}` : ''}`;
+        // 경로 끝의 stop 은 이동이 아니므로 세지 않는다 (지금 이동 중인 묶음은 이미 경로에서 빠져 있다)
+        const remaining = (s.current_path || []).filter((c) => c !== 'stop').length;
+        state.textContent = `${robotStatusLabel(r.status)}${remaining ? ` · 남은 이동 ${remaining}칸` : ''}`;
         setMap(hasPos ? { x: r.current_x - 1, y: r.current_y - 1 } : null, blocked);
         setStage(r.status);
         setNav(ob);
