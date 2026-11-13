@@ -23,11 +23,7 @@ export default {
     let mode = 'obstacle';
     let dirty = false;
     let updatedAt = null;
-
-    ctx.setHeaderAction(h('button', { type: 'button', class: 'text-btn', onClick: () => {
-      if (!confirm('격자를 모두 비울까요? 서버에 저장하기 전까지는 반영되지 않습니다.')) return;
-      grid = empty(rows, cols); start = null; labels = {}; dirty = true; draw();
-    } }, '초기화'));
+    let canEdit = false;       // 서버 /admin/check 결과. 확인 전에는 보기 전용
 
     // --- 크기
     const rowsIn = h('input', { class: 'input input-num', type: 'number', min: 1, max: MAX_SIZE, value: rows, inputMode: 'numeric', id: 'g-rows' });
@@ -64,6 +60,7 @@ export default {
       return cell && gridBox.contains(cell) ? cell : null;
     };
     gridBox.addEventListener('pointerdown', (e) => {
+      if (!canEdit) return;
       if (mode !== 'obstacle' && mode !== 'free') return;
       if (e.pointerType === 'mouse' && e.button !== 0) return;
       const cell = e.target.closest('.cell');
@@ -98,6 +95,7 @@ export default {
 
     // 클릭: 시작점·목적지 모드, 그리고 키보드(Enter/Space)로 칸을 누른 경우
     gridBox.addEventListener('click', (e) => {
+      if (!canEdit) return;
       const cell = e.target.closest('.cell');
       if (!cell) return;
       const isKeyboard = e.detail === 0;
@@ -108,7 +106,9 @@ export default {
     const modeText = h('strong');
     const modeHint = h('span');
     const locCount = h('span');
-    const hint = h('div', { class: 'hint' }, h('span', null, '모드: ', modeText, modeHint), locCount);
+    const modeLine = h('span', null, '모드: ', modeText, modeHint);
+    const hint = h('div', { class: 'hint' }, modeLine, locCount);
+    const readOnlyNote = h('p', { class: 'label-sm', style: { fontWeight: 500, textAlign: 'center' } }, '보기 전용입니다. 지도 수정과 저장은 관리자만 할 수 있습니다.');
     const updated = h('div', { class: 'label-sm', style: { fontWeight: 500, textAlign: 'center' } });
 
     const saveBtn = btn('DB 저장', { kind: 'primary', icon: 'db' });
@@ -133,10 +133,35 @@ export default {
       });
     });
 
-    root.append(tools, modes, wrap, hint, h('div', { class: 'row' }, saveBtn, loadBtn), placeBtn, updated);
+    root.append(readOnlyNote, tools, modes, wrap, hint, h('div', { class: 'row' }, saveBtn, loadBtn), placeBtn, updated);
     setMode(mode);
+    setEditable(false);
     draw();
     load(false);
+    api.adminCheck()
+      .then((r) => { if (alive) setEditable(!r.enabled || r.admin); })
+      .catch((e) => {
+        if (!alive) return;
+        if (e.status === 404) { setEditable(true); return; }   // /admin/check 가 없는 예전 서버
+        readOnlyNote.textContent = '관리자 확인을 하지 못해 보기 전용으로 열었습니다. 새로고침해 보세요.';
+      });
+
+    // 관리자만 크기·모드·저장·초기화를 쓸 수 있다. 서버도 관리자 키 없는 저장을 거절한다.
+    function setEditable(on) {
+      canEdit = on;
+      tools.hidden = modes.hidden = saveBtn.hidden = modeLine.hidden = !on;
+      readOnlyNote.hidden = on;
+      gridBox.classList.toggle('edit', on);
+      if (on) {
+        setMode(mode);
+        ctx.setHeaderAction(h('button', { type: 'button', class: 'text-btn', onClick: () => {
+          if (!confirm('격자를 모두 비울까요? 서버에 저장하기 전까지는 반영되지 않습니다.')) return;
+          grid = empty(rows, cols); start = null; labels = {}; dirty = true; draw();
+        } }, '초기화'));
+      } else {
+        gridBox.style.touchAction = '';
+      }
+    }
 
     function setMode(m) {
       mode = m;

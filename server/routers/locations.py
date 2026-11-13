@@ -1,14 +1,15 @@
 import sqlite3
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from server.admin import require_admin
 from server.database import get_db
 
 
 router = APIRouter()
 
 
-@router.post("/locations")
+@router.post("/locations", dependencies=[Depends(require_admin)])
 def create_location(zone_name: str, x: int, y: int):
     conn = get_db()
     cursor = conn.cursor()
@@ -45,7 +46,7 @@ def get_locations():
     ]
 
 
-@router.put("/locations/{location_id}")
+@router.put("/locations/{location_id}", dependencies=[Depends(require_admin)])
 def update_location(location_id: int, zone_name: str, x: int, y: int):
     conn = None
 
@@ -105,7 +106,7 @@ def update_location(location_id: int, zone_name: str, x: int, y: int):
             conn.close()
 
 
-@router.delete("/locations/{location_id}")
+@router.delete("/locations/{location_id}", dependencies=[Depends(require_admin)])
 def delete_location(location_id: int):
     conn = None
 

@@ -27,6 +27,7 @@ from server.routers import camera as camera_router
 from server.routers import route as route_router
 from server.routers import system as system_router
 from server.routers.mobile_app import setup_mobile
+from server import admin as admin_module
 from server.chatbot import agent as chat_agent
 
 # =========================
@@ -80,6 +81,7 @@ app.include_router(home_router.router)
 app.include_router(camera_router.router)
 app.include_router(route_router.router)
 app.include_router(system_router.router)
+app.include_router(admin_module.router)
 
 
 # =========================

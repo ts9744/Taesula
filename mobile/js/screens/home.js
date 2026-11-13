@@ -1,5 +1,5 @@
 // 홈: 로봇 상태 · 빠른 이동 · 최근 물품
-import { api, getServerUrl, setServerUrl } from '../api.js';
+import { api, getAdminKey, setAdminKey } from '../api.js';
 import { h, icon, btn, busy, toast, openSheet, field, gridView, mergeLocations, itemBadge, robotStatusLabel, sida, sidaFace } from '../ui.js';
 
 export default {
@@ -10,7 +10,7 @@ export default {
       h('div', { class: 'brand' },
         h('div', { class: 'brand-mark' }, sidaFace(30)),
         h('div', null, h('span', { class: 'brand-name' }, 'Taesula'), h('span', { class: 'brand-sub' }, '스마트 물류 로봇 관제'))),
-      h('button', { type: 'button', class: 'icon-btn', 'aria-label': '서버 설정', onClick: openSettings }, icon('settings', 22)),
+      h('button', { type: 'button', class: 'icon-btn', 'aria-label': '설정', onClick: openSettings }, icon('settings', 22)),
     ];
   },
 
@@ -207,27 +207,40 @@ export default {
 };
 
 function openSettings() {
-  const input = h('input', {
-    class: 'input', type: 'url', inputMode: 'url', autocomplete: 'off',
-    placeholder: `비워 두면 ${location.origin}`, value: getServerUrl(),
+  // 관리자 키: 격자 지도 저장과 목적지 등록에 필요하다. 비워 두면 지운다.
+  const adminInput = h('input', {
+    class: 'input', type: 'password', autocomplete: 'off',
+    placeholder: '관리자만 입력', value: getAdminKey(),
   });
   let close;
   const save = btn('저장', {
-    kind: 'primary', block: true, onClick: () => {
-      const v = input.value.trim();
-      if (v && !/^https?:\/\/[^\s/]+/i.test(v)) { toast('http:// 또는 https:// 로 시작하는 주소를 입력하세요.', 'error'); return; }
-      setServerUrl(v);
+    kind: 'primary', block: true, onClick: async () => {
+      const key = adminInput.value.trim();
+      const keyChanged = key !== getAdminKey();
+      setAdminKey(key);
       close();
-      toast('서버 주소를 저장했습니다.', 'ok');
+      let msg = '설정을 저장했습니다.';
+      let kind = 'ok';
+      if (keyChanged && key) {
+        try {
+          const r = await api.adminCheck();
+          if (r.admin && r.enabled) msg = '관리자 키를 확인했습니다. 격자 탭에서 지도를 수정할 수 있습니다.';
+          else if (!r.enabled) msg = '서버에 관리자 키가 설정되어 있지 않아 누구나 지도를 수정할 수 있습니다.';
+          else { msg = '관리자 키가 맞지 않습니다.'; kind = 'error'; }
+        } catch (e) { msg = `관리자 키를 확인하지 못했습니다. ${e.message}`; kind = 'error'; }
+      } else if (keyChanged) {
+        msg = '관리자 키를 지웠습니다.';
+      }
+      toast(msg, kind);
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     }
   });
   close = openSheet({
-    title: '서버 설정',
+    title: '설정',
     body: h('div', { style: { display: 'flex', flexDirection: 'column', gap: '14px' } },
       h('p', { style: { margin: 0, fontSize: '14px', lineHeight: 1.6, color: 'var(--muted)' } },
-        '라즈베리파이 서버의 /app 주소로 앱을 열었다면 비워 두세요. 다른 곳에서 열었다면 서버 주소를 적습니다. 예: http://192.168.0.20:8000'),
-      field('서버 주소', input),
+        '관리자 키를 넣으면 격자 탭에서 지도를 수정·저장하고 목적지를 등록할 수 있습니다. 비워 두면 보기 전용입니다.'),
+      field('관리자 키', adminInput),
       save,
       btn('취소', { block: true, onClick: () => close() })),
   });

@@ -7,7 +7,7 @@ import sys
 BASE_DIR = Path(__file__).resolve().parents[1]
 sys.path.append(str(BASE_DIR))
 
-from config import SERVER_URL, MAIN_GUI_SIZE
+from config import SERVER_URL, MAIN_GUI_SIZE, ADMIN_HEADERS
 
 class GridControlGUI:
     def __init__(self, root, back_callback=None):
@@ -246,6 +246,7 @@ class GridControlGUI:
             response = requests.post(
                 f"{SERVER_URL}/grid-map",
                 json=data,
+                headers=ADMIN_HEADERS,
                 timeout=5
             )
 
@@ -379,6 +380,7 @@ class GridControlGUI:
                     "x": x,
                     "y": y
                 },
+                headers=ADMIN_HEADERS,
                 timeout=5
             )
 

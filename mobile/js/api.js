@@ -1,9 +1,9 @@
 // Taesula 서버(FastAPI) API 클라이언트
-// 앱을 서버의 /app 경로에서 열면 같은 주소로 요청하므로 따로 설정할 것이 없습니다.
-// 다른 주소에서 앱을 열었다면 홈 화면의 설정에서 서버 주소를 입력합니다.
+// 앱은 서버의 /app 경로에서 열리므로 항상 같은 주소(origin)로 요청합니다.
 
-const KEY = "taesula.serverUrl";
+const OLD_SERVER_URL_STORE = "taesula.serverUrl";   // 예전 '서버 주소' 설정. 더 이상 쓰지 않는다
 const API_KEY_STORE = "taesula.apiKey";
+const ADMIN_KEY_STORE = "taesula.adminKey";
 
 function readStore(key) {
   try {
@@ -33,18 +33,20 @@ function writeStore(key, value) {
 })();
 
 let apiKey = readStore(API_KEY_STORE) || "";
-let serverUrl = (readStore(KEY) || "").trim().replace(/\/+$/, "");
+// 관리자 키: 홈 화면 설정에서 넣는다. 격자 지도 저장, 목적지 등록에 필요하다.
+let adminKey = readStore(ADMIN_KEY_STORE) || "";
+writeStore(OLD_SERVER_URL_STORE, "");   // 예전에 저장한 서버 주소가 남아 있으면 지운다
 
-export function getServerUrl() {
-  return serverUrl;
+export function getAdminKey() {
+  return adminKey;
 }
-export function setServerUrl(url) {
-  serverUrl = (url || "").trim().replace(/\/+$/, "");
-  writeStore(KEY, serverUrl);
+export function setAdminKey(key) {
+  adminKey = (key || "").trim();
+  writeStore(ADMIN_KEY_STORE, adminKey);
 }
 
 function buildUrl(path, params) {
-  const base = serverUrl || window.location.origin;
+  const base = window.location.origin;
   const url = new URL(base + path);
   if (params) {
     for (const [k, v] of Object.entries(params)) {
@@ -69,6 +71,7 @@ async function request(method, path, { params, json, timeout = 8000 } = {}) {
     const headers = {};
     if (json) headers["Content-Type"] = "application/json";
     if (apiKey) headers["X-API-Key"] = apiKey;
+    if (adminKey) headers["X-Admin-Key"] = adminKey;
 
     res = await fetch(buildUrl(path, params), {
       method,
@@ -144,6 +147,7 @@ export const api = {
   createLocation: (zone_name, x, y) =>
     request("POST", "/locations", { params: { zone_name, x, y } }),
   gridMap: () => request("GET", "/grid-map"),
+  adminCheck: () => request("GET", "/admin/check", { timeout: 4000 }),
   saveGridMap: (payload) => request("POST", "/grid-map", { json: payload }),
 
   // 챗봇 (서버의 로컬 LLM이 도구를 여러 번 부르면 오래 걸려서 대기 시간을 길게 둔다)

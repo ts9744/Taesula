@@ -1,8 +1,12 @@
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from server import state
+from server.admin import require_admin
 from server.database import get_db
+# obstacle 을 route 보다 먼저: 둘이 서로 import 하므로 route 가 먼저 로드되면 실패한다
+from server.routers import obstacle, route  # noqa: F401
 from server.schemas.request_models import GridMapRequest
 
 
@@ -65,8 +69,17 @@ def place_robot_if_invalid(cursor, grid_data):
     return True
 
 
-@router.post("/grid-map")
+@router.post("/grid-map", dependencies=[Depends(require_admin)])
+@state.locked
 def save_grid_map(grid_data: GridMapRequest):
+    # 로봇이 움직이는 중에 지도를 바꾸면 남은 경로는 옛 지도 기준인데 지도만 바뀌고,
+    # place_robot_if_invalid 가 이동 중인 로봇 위치를 시작점으로 옮길 수 있다.
+    if route.robot_busy():
+        raise HTTPException(
+            status_code=409,
+            detail="로봇이 배송·복귀·이동 중이거나 대기 중인 작업이 있어 지도를 저장할 수 없습니다. 멈춘 뒤 다시 저장하세요.",
+        )
+
     # try 밖에서 검사해야 아래 except Exception 에 잡혀 500 으로 바뀌지 않는다
     validate_start_cell(grid_data.raw_grid)
 
