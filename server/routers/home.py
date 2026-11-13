@@ -10,7 +10,7 @@
   - POST /robot/return-home        -> 예약을 기다리지 않고 바로 복귀
   - 홈 도착(/command/done)          -> state.mission = None, state.goal = None
 
-복귀 중에는 state.goal 이 홈이므로, 장애물 재탐색(/robot/obstacle, try_retry, /robot/resume)이
+복귀 중에는 state.goal 이 홈이므로, 장애물 재탐색(/robot/obstacle, /robot/resume, 앱에서 막힌 칸 해제)이
 그대로 홈을 목표로 동작한다.
 """
 import json
@@ -120,20 +120,18 @@ def start_return():
     )
 
     if plan is None:
-        # 길이 없으면 장애물 대기 흐름(try_retry)에 맡긴다. goal 이 홈이라 그대로 재시도된다.
+        # 길이 없으면 멈추고 사람을 기다린다 (manual_required). 사람이 막힌 칸을 해제하면 goal 이 홈이라 그대로 홈으로 간다.
         state.current_path = []
-        state.nav_status, state.retry_count, state.probing = "no_path", 0, False
-        state.retry_at = time.time() + obstacle.RETRY_SEC
+        state.nav_status = "manual_required"
         obstacle._save_robot(pos, "obstacle_detected")
         return {
             "status": "no_path",
             "start": list(pos),
             "home": list(home),
-            "retry_in_sec": obstacle.RETRY_SEC,
         }
 
     state.current_path = plan["commands"].copy()
-    state.nav_status, state.retry_count, state.probing = "moving", 0, False
+    state.nav_status = "moving"
     obstacle._save_robot(pos, "moving")
 
     return {

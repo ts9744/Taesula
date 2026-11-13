@@ -24,10 +24,8 @@ from server.replan_logic import (
 
 router = APIRouter()
 blocked_cells = {}          # {(x, y): 감지 시각}  - 서버 메모리에만 저장
-manual_blocked = set()      # 사람이 앱에서 표시한 칸 - 30초가 지나도 안 풀리고, 서버 메모리에만 저장
-BLOCK_TTL_SEC = 30.0        # 막은 지 이 시간이 지나면 자동으로 푼다 (그 길로 가 보다가 아직 있으면 다시 막힌다)
-RETRY_SEC = 10.0            # 길이 없을 때 재시도 간격
-MAX_RETRIES = 4             # 이만큼 해도 안 되면 사람이 앱에서 직접 처리 (manual_required)
+manual_blocked = set()      # 사람이 앱에서 표시한 칸 - 사람이 해제하기 전에는 안 풀리고, 서버 메모리에만 저장
+BLOCK_TTL_SEC = float("inf")   # 센서로 막은 칸도 자동으로 풀지 않는다. 갈 길이 모두 막히면 멈추고, 사람이 치운 뒤 앱 미니맵에서 해제한다
 HAS_SENSOR = ("forward", "backward", "left", "right")   # 네 방향 모두 센서가 있다.
 
 
@@ -110,7 +108,7 @@ def mark_dispatched(cmd, steps=1):
     extras = {"detect_cm": 0, "known_cm": None}
 
     if cmd == "stop":  # 경로 끝(도착): 상태를 idle 로 되돌림
-        state.nav_status, state.probing, state.retry_count = "idle", False, 0
+        state.nav_status = "idle"
         pos = _robot_pos()
         if pos is not None:
             _save_robot(pos, "idle")
@@ -139,9 +137,7 @@ def _blocked_ahead(pos, cmd):
 
 
 def idle_extras():
-    """/next-command 가 'stop' 을 돌려줄 때 덧붙인다. 길이 없어 기다리는 중이면 제자리에서 센서를 계속 읽어 알려 달라고 한다."""
-    if blocked_cells and getattr(state, "nav_status", None) in ("no_path", "manual_required"):
-        return {"scan": True, "detect_cm": DETECT_CM}
+    """/next-command 가 'stop' 을 돌려줄 때 덧붙인다. 막힌 칸은 사람이 앱에서 해제하므로 제자리 센서 스캔은 요청하지 않는다."""
     return {}
 
 
@@ -195,14 +191,9 @@ def report_obstacle(r: ObstacleReport):
                     lambda p: path_to_commands(p, "north"), ttl_sec=BLOCK_TTL_SEC, cell=cell)
     if result["status"] == "replanned":
         state.current_path = result["commands"].copy()
-        state.nav_status, state.retry_count, state.probing = "moving", 0, False
-    else:                                         # 길이 없음: 잠시 뒤 막힌 칸을 하나씩 풀어 보며 재시도
-        if not getattr(state, "probing", False):  # 풀어 본 칸이 또 막힌 경우에는 재시도 횟수를 이어간다
-            state.retry_count = 0
-        state.probing = False
-        state.nav_status = "no_path"
-        state.retry_at = time.time() + RETRY_SEC
-        result["retry_in_sec"] = RETRY_SEC
+        state.nav_status = "moving"
+    else:                                         # 갈 수 있는 길이 모두 막힘: 멈추고, 사람이 치운 뒤 앱에서 해제할 때까지 기다린다
+        state.nav_status = "manual_required"
     result["obstacle_cell_index"] = n
     return result
 
@@ -215,11 +206,11 @@ def _stop_manual_move(r, pos, move, steps, grid):
 
     n, cell = locate_obstacle(pos, move, r.distance_cm, r.moved_cm)
     if grid is not None and not in_known_map(grid, cell):
-        blocked_cells[cell] = time.time()         # 앱 격자에 표시되고, 30초 뒤 자동으로 풀린다
+        blocked_cells[cell] = time.time()         # 앱 격자에 표시된다. 사람이 해제하기 전에는 풀리지 않는다
 
     state.current_command = "stop"
     state.current_path = []                       # 남은 칸과 끝의 stop 을 버린다 (브리지는 다음 호출에서 대기로 돌아감)
-    state.nav_status, state.retry_count, state.probing = "idle", 0, False
+    state.nav_status = "idle"
     _save_robot(arrived, "idle")
     return {
         "status": "stopped",
@@ -244,44 +235,35 @@ def _fix_path_for_manual(now):
     if not manual_blocked or getattr(state, "goal", None) is None:
         return
     if getattr(state, "nav_status", None) in ("no_path", "manual_required"):
-        return                                    # 길 없음 상태는 아래 재시도가 처리한다
+        return                                    # 길 없음 상태는 사람이 칸을 해제할 때 처리한다
     pos = _robot_pos()
     if pos is None or not any(c in manual_blocked for c in _path_cells(pos)):
         return
     plan, pos = _plan_release(0)
-    if plan is None:                              # 돌아갈 길이 없음
+    if plan is None:                              # 돌아갈 길이 없음: 멈추고 사람을 기다린다
         state.current_path = []
-        state.nav_status, state.retry_count, state.probing = "no_path", 0, False
-        state.retry_at = now + RETRY_SEC
+        state.nav_status = "manual_required"
         return
     state.current_path = plan["commands"].copy()
-    state.nav_status, state.retry_count, state.probing = "moving", 0, False
+    state.nav_status = "moving"
+
+
+def _resume_if_possible():
+    """사람이 칸을 해제한 뒤: 이제 갈 길이 있으면 바로 출발하고, 없으면 계속 기다린다."""
+    plan, pos = _plan_release(0)
+    if plan is None:
+        return False
+    state.current_path = plan["commands"].copy()
+    state.nav_status = "moving"
+    _save_robot(pos, "moving")
+    return True
 
 
 def try_retry(now=None):
-    """/next-command 맨 앞에서 부른다. 길이 없어 기다리는 중이면 때가 됐을 때 막힌 칸을 오래된 것부터 풀고 다시 길을 찾는다.
-    풀어 본 칸이 정말 비었는지는 로봇이 가다가 센서로 확인한다 (아직 있으면 다시 막힌다)."""
+    """/next-command 맨 앞에서 부른다. 자동 재시도는 없다. 사람이 표시한 칸이 가는 길 위에 있을 때만 길을 다시 찾는다."""
     now = time.time() if now is None else now
     expire_blocked(now)
     _fix_path_for_manual(now)
-    if getattr(state, "nav_status", None) != "no_path":
-        return
-    if now < getattr(state, "retry_at", 0):
-        return
-    k = getattr(state, "retry_count", 0) + 1
-    if k > MAX_RETRIES:
-        state.nav_status = "manual_required"      # 앱에서 사람이 처리
-        return
-    state.retry_count = k
-    plan, pos = _plan_release(k - 1)             # 첫 재시도는 아무것도 풀지 않고, 이후 오래된 칸부터 하나씩 더 푼다
-    if plan is None:
-        state.retry_at = now + RETRY_SEC
-        return
-    for c in plan["released"]:
-        blocked_cells.pop(tuple(c), None)
-    state.current_path = plan["commands"].copy()
-    state.nav_status, state.probing = "moving", True
-    _save_robot(pos, "moving")
 
 
 @router.post("/robot/resume")
@@ -294,7 +276,7 @@ def resume():
     for c in plan["released"]:
         blocked_cells.pop(tuple(c), None)
     state.current_path = plan["commands"].copy()
-    state.nav_status, state.retry_count, state.probing = "moving", 0, False
+    state.nav_status = "moving"
     _save_robot(pos, "moving")
     return {"status": "resumed", "path": plan["path"], "commands": plan["commands"]}
 
@@ -315,8 +297,6 @@ def report_clear(r: ClearReport):
         cell = (pos[0] + d[0] * n, pos[1] + d[1] * n)
         if blocked_cells.pop(cell, None) is not None:
             released.append(list(cell))
-    if released and getattr(state, "nav_status", None) == "no_path":
-        state.retry_at = 0                          # 풀렸으니 바로 다시 길을 찾아본다
     return {"released": released}
 
 
@@ -329,7 +309,7 @@ class ManualBlock(BaseModel):
 @router.post("/robot/manual-block")
 @state.locked
 def manual_block(m: ManualBlock):
-    """앱 미니맵에서 사람이 칸을 눌러 장애물을 표시/해제한다. 표시한 칸은 30초가 지나도 풀리지 않는다."""
+    """앱 미니맵에서 사람이 칸을 눌러 장애물을 표시/해제한다. 센서로 막힌 칸도 여기서 해제한다. 표시한 칸은 사람이 해제하기 전에는 풀리지 않는다."""
     cell = (m.x - 1, m.y - 1)
     grid, pos, goal = load_grid_from_db(), _robot_pos(), getattr(state, "goal", None)
     if grid is None or not (0 <= cell[1] < len(grid) and 0 <= cell[0] < len(grid[0])):
@@ -346,10 +326,9 @@ def manual_block(m: ManualBlock):
     else:
         manual_blocked.discard(cell)
         blocked_cells.pop(cell, None)             # 센서가 막은 칸도 바로 푼다
-        if getattr(state, "nav_status", None) in ("no_path", "manual_required"):
-            state.nav_status, state.retry_count, state.probing = "no_path", 0, False
-            state.retry_at = 0                    # 풀었으니 바로 다시 길을 찾아본다
-    return {"status": "ok", "manual": [[c[0] + 1, c[1] + 1] for c in sorted(manual_blocked)]}
+        if getattr(state, "nav_status", None) == "manual_required":
+            _resume_if_possible()                 # 풀었으니 갈 길이 생겼는지 바로 확인한다
+    return {"status": "ok", "nav_status": getattr(state, "nav_status", None), "manual": [[c[0] + 1, c[1] + 1] for c in sorted(manual_blocked)]}
 
 
 @router.get("/robot/obstacles")
@@ -357,7 +336,6 @@ def manual_block(m: ManualBlock):
 def get_obstacles():
     """앱 격자 표시용. 좌표는 robot/status 와 같이 1부터 센다. 앱은 1~2초마다 호출하면 된다."""
     expire_blocked()
-    now = time.time()
     pos, goal = _robot_pos(), getattr(state, "goal", None)
 
     path, cur = [], pos                      # 앞으로 갈 칸 (남은 명령을 칸으로 풀어 줌)
@@ -369,16 +347,15 @@ def get_obstacles():
         path.append([cur[0] + 1, cur[1] + 1])
 
     return {
-        "nav_status": getattr(state, "nav_status", None) or "idle",   # idle / moving / no_path / manual_required
+        "nav_status": getattr(state, "nav_status", None) or "idle",   # idle / moving / manual_required
         "robot": None if pos is None else [pos[0] + 1, pos[1] + 1],
         "goal": None if goal is None else [goal[0] + 1, goal[1] + 1],
         "blocked": [{"x": c[0] + 1, "y": c[1] + 1, "manual": False,
-                     "expires_in_sec": max(0, round(BLOCK_TTL_SEC - (now - t)))}
-                    for c, t in sorted(blocked_cells.items())]
+                     "expires_in_sec": None}
+                    for c in sorted(blocked_cells)]
                    + [{"x": c[0] + 1, "y": c[1] + 1, "manual": True, "expires_in_sec": None}
                       for c in sorted(manual_blocked)],
         "path": path,
-        "retry_count": getattr(state, "retry_count", 0),
     }
 
 
@@ -387,5 +364,4 @@ def get_obstacles():
 def get_blocked():
     expire_blocked()
     return {"blocked_cells": sorted(blocked_cells),
-            "nav_status": getattr(state, "nav_status", None),
-            "retry_count": getattr(state, "retry_count", 0)}
+            "nav_status": getattr(state, "nav_status", None)}

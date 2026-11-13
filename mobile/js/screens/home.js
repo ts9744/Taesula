@@ -2,9 +2,6 @@
 import { api, getServerUrl, setServerUrl } from '../api.js';
 import { h, icon, btn, busy, toast, openSheet, field, gridView, mergeLocations, itemBadge, robotStatusLabel, sida, sidaFace } from '../ui.js';
 
-// 서버 obstacle.py 의 MAX_RETRIES 와 같은 값 (자동 재시도 횟수)
-const MAX_RETRIES = 4;
-
 export default {
   title: '홈',
 
@@ -30,7 +27,7 @@ export default {
     const state = h('span', { class: 'v' }, '—');
     const stage = h('div', { class: 'robot-stage' }, sida('idle', 190));
 
-    // --- 길이 막혔을 때 안내 (no_path: 자동 재시도 중 / manual_required: 사람이 처리)
+    // --- 길이 막혔을 때 안내 (manual_required: 갈 수 있는 길이 모두 막혀 로봇이 멈춤. 사람이 치우고 지도에서 해제)
     const navText = h('p', { class: 'msg' });
     const resumeBtn = btn('다시 시도', { kind: 'primary', icon: 'refresh', block: true });
     resumeBtn.hidden = true;
@@ -48,13 +45,8 @@ export default {
 
     function setNav(ob) {
       const nav = ob ? ob.nav_status : 'idle';
-      if (nav === 'no_path') {
-        navText.textContent = `길이 막혀 다른 길을 찾는 중입니다 (${ob.retry_count || 0}/${MAX_RETRIES})`;
-        navAlert.classList.remove('manual');
-        resumeBtn.hidden = true;
-        navAlert.hidden = false;
-      } else if (nav === 'manual_required') {
-        navText.textContent = '경로를 찾지 못했습니다. 장애물을 치우고, 지도에 직접 표시한 칸이 있으면 해제한 뒤 다시 시도를 눌러 주세요.';
+      if (nav === 'manual_required') {
+        navText.textContent = '갈 수 있는 길이 모두 막혀 로봇이 멈췄습니다. 장애물을 치운 뒤 지도에서 막힌 칸을 눌러 해제해 주세요. 한꺼번에 풀려면 다시 시도를 누르세요.';
         navAlert.classList.add('manual');
         resumeBtn.hidden = false;
         navAlert.hidden = false;
@@ -87,7 +79,7 @@ export default {
     const RETURN_MSG = {
       returning: '시작점으로 복귀를 시작합니다.',
       already_home: '이미 시작점에 있습니다.',
-      no_path: '복귀 경로가 막혀 있습니다. 잠시 뒤 다시 찾습니다.',
+      no_path: '복귀 경로가 막혀 있습니다. 장애물을 치우고 지도에서 막힌 칸을 해제해 주세요.',
     };
     const returnBtn = btn('시작점으로 복귀', { kind: 'secondary', icon: 'home', block: true });
     returnBtn.addEventListener('click', () => busy(returnBtn, async () => {
