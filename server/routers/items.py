@@ -1,7 +1,8 @@
 import sqlite3
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from server.admin import require_admin
 from server.database import get_db
 
 
@@ -133,7 +134,7 @@ def get_item(qr_code: str):
 
 
 # UPDATE
-@router.put("/items/{qr_code}")
+@router.put("/items/{qr_code}", dependencies=[Depends(require_admin)])
 def update_item(qr_code: str, name: str, destination_id: int):
     conn = None
 
@@ -193,7 +194,7 @@ def update_item(qr_code: str, name: str, destination_id: int):
 
 
 # DELETE
-@router.delete("/items/{qr_code}")
+@router.delete("/items/{qr_code}", dependencies=[Depends(require_admin)])
 def delete_item(qr_code: str):
     conn = get_db()
     cursor = conn.cursor()
@@ -210,7 +211,7 @@ def delete_item(qr_code: str):
 
 
 # STATUS UPDATE
-@router.put("/items/{qr_code}/status")
+@router.put("/items/{qr_code}/status", dependencies=[Depends(require_admin)])
 def update_item_status(qr_code: str, status: str):
     conn = get_db()
     cursor = conn.cursor()

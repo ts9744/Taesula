@@ -224,7 +224,7 @@ function openSettings() {
       if (keyChanged && key) {
         try {
           const r = await api.adminCheck();
-          if (r.admin && r.enabled) msg = '관리자 키를 확인했습니다. 격자 탭에서 지도를 수정할 수 있습니다.';
+          if (r.admin && r.enabled) msg = '관리자 키를 확인했습니다. 지도와 물품을 수정할 수 있습니다.';
           else if (!r.enabled) msg = '서버에 관리자 키가 설정되어 있지 않아 누구나 지도를 수정할 수 있습니다.';
           else { msg = '관리자 키가 맞지 않습니다.'; kind = 'error'; }
         } catch (e) { msg = `관리자 키를 확인하지 못했습니다. ${e.message}`; kind = 'error'; }
@@ -239,7 +239,7 @@ function openSettings() {
     title: '설정',
     body: h('div', { style: { display: 'flex', flexDirection: 'column', gap: '14px' } },
       h('p', { style: { margin: 0, fontSize: '14px', lineHeight: 1.6, color: 'var(--muted)' } },
-        '관리자 키를 넣으면 격자 탭에서 지도를 수정·저장하고 목적지를 등록할 수 있습니다. 비워 두면 보기 전용입니다.'),
+        '관리자 키를 넣으면 격자 지도 수정·저장, 목적지 등록, 물품 수정·삭제를 할 수 있습니다. 비워 두면 물품 등록과 조회만 됩니다.'),
       field('관리자 키', adminInput),
       save,
       btn('취소', { block: true, onClick: () => close() })),

@@ -223,7 +223,7 @@ python db_init.py
 | 변수 | 필수 | 설명 |
 | --- | --- | --- |
 | `TAESULA_API_KEY` | 브리지 사용 시 필수 | API 인증 키. 서버와 브리지에 **같은 값**을 넣는다 |
-| `TAESULA_ADMIN_KEY` | 시연 시 권장 | 관리자 키. 설정하면 격자 지도 저장, 목적지 추가·수정·삭제에 이 키가 필요하다. 앱은 홈 화면 설정의 **관리자 키** 칸에, 공장 GUI는 `factory/.env`에 같은 값을 넣는다. 비워 두면 누구나 수정할 수 있다 |
+| `TAESULA_ADMIN_KEY` | 시연 시 권장 | 관리자 키. 설정하면 격자 지도 저장, 목적지 추가·수정·삭제, 물품 수정·삭제에 이 키가 필요하다(물품 등록은 키 없이 가능). 앱은 홈 화면 설정의 **관리자 키** 칸에, 공장 GUI는 `factory/.env`에 같은 값을 넣는다. 비워 두면 누구나 수정할 수 있다 |
 | `TAESULA_ESP32_PORT` | 선택 | ESP32 시리얼 포트 (기본: `/dev/serial/by-id/usb-Silicon_Labs_CP2102_...`) |
 | `TAESULA_ENABLE_DOCS` | 선택 | `1`이면 `/docs` API 문서 화면을 켠다 (기본 꺼짐) |
 | `OLLAMA_HOST`, `OLLAMA_MODEL` | 선택 | 챗봇 설정 (아래 챗봇 항목 참고) |

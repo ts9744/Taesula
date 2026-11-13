@@ -7,7 +7,7 @@ import sys
 BASE_DIR = Path(__file__).resolve().parents[2]
 sys.path.append(str(BASE_DIR))
 
-from config import MAIN_GUI_SIZE, SERVER_URL
+from config import MAIN_GUI_SIZE, SERVER_URL, ADMIN_HEADERS
 
 
 class ItemManageGUI:
@@ -260,6 +260,7 @@ class ItemManageGUI:
                     "name": name,
                     "destination_id": destination_id
                 },
+                headers=ADMIN_HEADERS,
                 timeout=5
             )
 
@@ -305,6 +306,7 @@ class ItemManageGUI:
         try:
             response = requests.delete(
                 f"{SERVER_URL}/items/{qr_code}",
+                headers=ADMIN_HEADERS,
                 timeout=5
             )
 

@@ -13,6 +13,7 @@ export default {
     let selecting = false;          // 선택 삭제 모드
     const selected = new Set();     // 선택한 물품의 qr_code
     let deleting = false;
+    let canEdit = false;            // 서버 /admin/check 결과. 수정·삭제는 관리자만
 
     const search = h('input', { type: 'search', placeholder: '물품명 또는 QR 검색', 'aria-label': '물품 검색', enterKeyHint: 'search',
       onInput: (e) => { query = e.target.value.trim().toLowerCase(); renderList(); } });
@@ -33,7 +34,18 @@ export default {
       h('div', { class: 'card-head' }, left, h('div', { class: 'list-tools' }, reload, trash)),
       list);
 
+    trash.hidden = true;
     load(false);
+    api.adminCheck()
+      .then((r) => { if (alive) setEditable(!r.enabled || r.admin); })
+      .catch((e) => { if (alive && e.status === 404) setEditable(true); });   // 404: /admin/check 가 없는 예전 서버
+
+    function setEditable(on) {
+      canEdit = on;
+      trash.hidden = !on;
+      if (!on && selecting) exitSelect();
+      list.querySelectorAll('.list-item').forEach(styleRow);
+    }
 
     // ---------- 데이터 ----------
     async function load(showToast) {
@@ -92,8 +104,13 @@ export default {
       } else {
         row.removeAttribute('role');
         row.removeAttribute('aria-checked');
-        row.setAttribute('aria-haspopup', 'dialog');
-        row.setAttribute('aria-expanded', 'false');
+        if (canEdit) {
+          row.setAttribute('aria-haspopup', 'dialog');
+          row.setAttribute('aria-expanded', 'false');
+        } else {
+          row.removeAttribute('aria-haspopup');
+          row.removeAttribute('aria-expanded');
+        }
       }
     }
 
@@ -208,6 +225,7 @@ export default {
         if (e.detail === 0) { setChecked(row, !selected.has(row.dataset.qr)); renderTools(); }
         return;
       }
+      if (!canEdit) { toast('물품 수정·삭제는 관리자만 할 수 있습니다.'); return; }
       edit(row.__item, row);
     });
 
