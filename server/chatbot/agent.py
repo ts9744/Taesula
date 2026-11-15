@@ -49,7 +49,20 @@ SYSTEM_PROMPT = """당신은 물류 로봇 Taesula의 어시스턴트입니다.
 좋은 예: 같은 요청에 대해 start_delivery(qr_code="boxA")를 호출한 뒤, 그 결과를 바탕으로 "boxA를 ZONE1로 보냈습니다"라고 답함.
 """
 
-_client = Client(host=OLLAMA_HOST)
+_client = Client(host=OLLAMA_HOST, timeout=120)
+
+if MODEL.startswith("qwen3"):
+    LLM_OPTIONS = {
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "top_k": 20,
+        "min_p": 0,
+        "presence_penalty": 1.5,
+        "num_predict": 512,
+        "num_ctx": 8192,
+    }
+else:
+    LLM_OPTIONS = {"temperature": 0, "num_predict": 512, "num_ctx": 8192}
 
 # qwen2.5 는 한국어로 지시해도 가끔 중국어로 답한다. 한 번 기록에 남으면 다음 턴부터 따라 하므로 막는다.
 _HAN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
@@ -93,7 +106,8 @@ def run_agent_turn(session_id: str, user_message: str) -> str:
             model=MODEL,
             messages=[{"role": "system", "content": SYSTEM_PROMPT}] + history + extra,
             tools=tools.TOOL_DEFINITIONS,
-            options={"temperature": 0},
+            options=LLM_OPTIONS,
+            think=False,
         )
         call_elapsed = time.perf_counter() - call_start
         logger.info("ollama chat call #%d took %.2fs", iteration + 1, call_elapsed)
