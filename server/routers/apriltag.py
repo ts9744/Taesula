@@ -1,9 +1,9 @@
 """AprilTag API + 복귀 도착 시 홈 위치 확인 + 짧은 이동(nudge)으로 자동 보정.
 
-  POST /apriltag/calibrate      로봇을 홈 칸 중앙에 정확히 놓고 한 번 누른다 (기준 저장, DB)
+  POST /apriltag/calibrate      로봇을 홈 칸 중앙에 정확히 놓고 한 번 누른다 (기준 저장, DB) [관리자]
   GET  /apriltag/detect         지금 보이는 태그와 추정 위치
   POST /apriltag/home-check     홈 위치 다시 확인 (어긋났으면 자동 보정 시작)
-  POST /apriltag/measure-moves  홈에서 1칸 이동/짧은 이동을 해 보고 실제 이동 거리를 잰다
+  POST /apriltag/measure-moves  홈에서 1칸 이동/짧은 이동을 해 보고 실제 이동 거리를 잰다 [관리자]
                                 -> FORWARD_RUN_MS / STRAFE_RUN_MS 추천값 + 짧은 이동 학습
   GET  /apriltag/status         진행 중인 작업, 마지막 결과, 학습된 짧은 이동 모델
   POST /apriltag/job-done       브리지가 raw 명령(nudge 등)을 끝낼 때마다 부른다
@@ -23,10 +23,11 @@
 import json
 import time
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from server import state
+from server.admin import require_admin
 from server.camera import apriltag as tagmod
 from server.database import get_db, load_grid_from_db
 
@@ -366,7 +367,7 @@ def _free(grid, x, y):
     return 0 <= y < len(grid) and 0 <= x < len(grid[0]) and grid[y][x] != 1
 
 
-@router.post("/apriltag/measure-moves")
+@router.post("/apriltag/measure-moves", dependencies=[Depends(require_admin)])
 def measure_moves(p: MeasureParams = MeasureParams()):
     from server.routers import obstacle
     if load_ref() is None:
@@ -447,7 +448,7 @@ def job_done(j: JobDone):
 
 
 # ---------- API ----------
-@router.post("/apriltag/calibrate")
+@router.post("/apriltag/calibrate", dependencies=[Depends(require_admin)])
 def calibrate():
     home, cols = _home(), _cols()
     if home is None or not cols:

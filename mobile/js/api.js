@@ -122,6 +122,10 @@ export const api = {
   placeAtStart: () => request("POST", "/robot/place-at-start"),
   homeCheck: () => request("POST", "/apriltag/home-check", { timeout: 8000 }),
   tagCalibrate: () => request("POST", "/apriltag/calibrate", { timeout: 8000 }),
+  tagDetect: () => request("GET", "/apriltag/detect", { timeout: 8000 }),
+  tagStatus: () => request("GET", "/apriltag/status", { timeout: 4000 }),
+  measureMoves: (forward_run_ms, strafe_run_ms) =>
+    request("POST", "/apriltag/measure-moves", { json: { forward_run_ms, strafe_run_ms }, timeout: 8000 }),
   setRobotStatus: (current_x, current_y, status) =>
     request("PUT", "/robot/status", {
       params: { current_x, current_y, status },

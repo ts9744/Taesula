@@ -1,6 +1,6 @@
 // 홈: 로봇 상태 · 빠른 이동 · 최근 물품
 import { api, getAdminKey, setAdminKey } from '../api.js';
-import { h, icon, btn, busy, toast, openSheet, field, gridView, mergeLocations, itemBadge, robotStatusLabel, sida, sidaFace } from '../ui.js';
+import { h, icon, btn, busy, toast, openSheet, confirmDialog, field, gridView, mergeLocations, itemBadge, robotStatusLabel, sida, sidaFace } from '../ui.js';
 
 export default {
   title: '홈',
@@ -251,6 +251,7 @@ export default {
 };
 
 function openSettings() {
+  const tagBox = h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } });
   // 관리자 키: 격자 지도 저장과 목적지 등록에 필요하다. 비워 두면 지운다.
   const adminInput = h('input', {
     class: 'input', type: 'password', autocomplete: 'off',
@@ -286,6 +287,83 @@ function openSettings() {
         '관리자 키를 넣으면 격자 지도 수정·저장, 목적지 등록, 물품 수정·삭제를 할 수 있습니다. 비워 두면 물품 등록과 조회만 됩니다.'),
       field('관리자 키', adminInput),
       save,
-      btn('취소', { block: true, onClick: () => close() })),
+      btn('취소', { block: true, onClick: () => close() }),
+      tagBox),
   });
+
+  // 관리자일 때만 AprilTag 설정을 보여 준다
+  api.adminCheck().then((r) => { if (r.admin) tagBox.append(...aprilTagSettings()); }).catch(() => {});
+}
+
+// ---------- AprilTag (관리자) ----------
+function aprilTagSettings() {
+  const info = h('p', { style: { margin: 0, fontSize: '13px', lineHeight: 1.6, color: 'var(--muted)' } }, '상태 확인 중…');
+  const refresh = async () => {
+    try {
+      const s = await api.tagStatus();
+      const m = s.last_measure && s.last_measure.cell_move;
+      const rec = m ? Object.entries(m).map(([g, v]) => `${g === 'fb' ? '앞뒤' : '좌우'} 1칸 ${v.avg_cm}cm → 추천 ${v.recommended_ms}ms`).join(' / ') : '';
+      info.textContent = `${s.calibrated ? '기준 등록됨' : '기준 없음 (먼저 기준 등록)'}${s.job ? ` · 진행 중: ${s.job.kind === 'measure' ? '이동 거리 측정' : '자동 보정'}` : ''}${rec ? ` · ${rec}` : ''}`;
+    } catch (e) { info.textContent = `상태를 불러오지 못했습니다. ${e.message}`; }
+  };
+
+  const calBtn = btn('기준 등록', { kind: 'primary', block: true });
+  calBtn.addEventListener('click', async () => {
+    const yes = await confirmDialog({
+      title: '로봇을 홈 칸 정중앙에, 북쪽을 똑바로 보게 놓았나요?',
+      message: '시작점에 놓기도 함께 처리되어 대기열과 진행 중인 배송이 초기화됩니다.',
+      yes: '기준 등록', no: '취소', danger: false,
+    });
+    if (!yes) return;
+    await busy(calBtn, async () => {
+      try {
+        await api.placeAtStart();
+        const r = await api.tagCalibrate();
+        toast(`기준을 등록했습니다. (태그 ID ${r.ref.tag_id}, 보이는 태그 ${r.tags.length}개)`, 'ok');
+      } catch (e) { toast(e.message, 'error'); }
+      refresh();
+    });
+  });
+
+  const detBtn = btn('지금 위치 확인', { block: true });
+  detBtn.addEventListener('click', () => busy(detBtn, async () => {
+    try {
+      const r = await api.tagDetect();
+      if (!r.calibrated) return toast('기준이 없습니다. 먼저 기준 등록을 하세요.', 'error');
+      if (!r.located) return toast(`태그로 위치를 잴 수 없습니다. (보이는 태그 ${r.tags.length}개)`, 'error');
+      const l = r.located;
+      toast(`(${l.cell[0]}, ${l.cell[1]}) 칸 중앙에서 x ${l.offset_cm[0]}cm, y ${l.offset_cm[1]}cm${l.yaw_deg == null ? '' : `, ${l.yaw_deg}°`} · 태그 ${l.tag_ids.join(',')}`, 'ok');
+    } catch (e) { toast(e.message, 'error'); }
+  }));
+
+  const fwd = h('input', { class: 'input', type: 'number', inputmode: 'numeric', value: '1000' });
+  const str = h('input', { class: 'input', type: 'number', inputmode: 'numeric', value: '1000' });
+  const measBtn = btn('이동 거리 측정', { block: true });
+  measBtn.addEventListener('click', async () => {
+    const yes = await confirmDialog({
+      title: '이동 거리를 잴까요?',
+      message: '로봇이 홈에서 앞뒤·좌우로 1칸씩, 그리고 짧게 여러 번 움직인 뒤 홈 중앙으로 돌아옵니다. 주변 칸을 비워 주세요. 1~2분 걸립니다.',
+      yes: '시작', no: '취소', danger: false,
+    });
+    if (!yes) return;
+    await busy(measBtn, async () => {
+      try {
+        await api.measureMoves(Number(fwd.value) || 1000, Number(str.value) || 1000);
+        toast('측정을 시작했습니다. 끝나면 이 화면에 추천값이 나옵니다.', 'ok');
+      } catch (e) { toast(e.message, 'error'); }
+      refresh();
+    });
+  });
+
+  refresh();
+  return [
+    h('h3', { style: { margin: '6px 0 0', fontSize: '15px' } }, 'AprilTag 위치 보정 (관리자)'),
+    info,
+    calBtn,
+    detBtn,
+    field('지금 펌웨어 FORWARD_RUN_MS', fwd),
+    field('지금 펌웨어 STRAFE_RUN_MS', str),
+    measBtn,
+    btn('상태 새로고침', { block: true, onClick: refresh }),
+  ];
 }
