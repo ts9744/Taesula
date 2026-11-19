@@ -5,6 +5,7 @@ import concurrent.futures
 import threading
 from threading import Lock
 from fastapi import HTTPException
+from libcamera import Transform
 
 try:
     from picamera2 import Picamera2
@@ -23,6 +24,7 @@ camera_closing = None   # 망가진 카메라를 정리 중인 스레드
 # Python 3.11+ 에서는 둘이 같은 클래스지만, 버전 차이에 대비해 둘 다 잡는다
 CAPTURE_TIMEOUT_ERRORS = (TimeoutError, concurrent.futures.TimeoutError)
 
+CAMERA_ROTATE_180 = True
 
 def get_camera():
     global camera
@@ -34,7 +36,8 @@ def get_camera():
         cam = Picamera2()
         try:
             config = cam.create_preview_configuration(
-                main={"size": (1280, 720), "format": "RGB888"}
+                main={"size": (1280, 720), "format": "RGB888"},
+                transform=Transform(hflip=1, vflip=1) if CAMERA_ROTATE_180 else Transform(),
             )
             cam.configure(config)
             cam.start()
