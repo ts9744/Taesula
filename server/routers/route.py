@@ -79,6 +79,7 @@ def robot_busy():
         or bool(state.current_path)
         or getattr(state, "pending_move", None) is not None
         or bool(state.delivery_queue)
+        or getattr(state, "home_misaligned", False)          # 홈 위치 확인 전에는 출발하지 않는다
     )
 
 

@@ -160,6 +160,7 @@ def place_at_start():
     state.skip_detect = False
     state.nav_status, state.retry_count, state.probing = "idle", 0, False
     state.placed_at = time.time()          # 추가: 브리지가 이 값을 보고 halt를 푼다
+    state.home_check, state.home_misaligned = None, False   # 사람이 맞춰 놓았으므로 AprilTag 확인 해제
 
     return {"status": "placed", "robot": [start[0] + 1, start[1] + 1]}
 

@@ -356,6 +356,8 @@ def get_obstacles():
                    + [{"x": c[0] + 1, "y": c[1] + 1, "manual": True, "expires_in_sec": None}
                       for c in sorted(manual_blocked)],
         "path": path,
+        "home_check": getattr(state, "home_check", None),
+        "home_misaligned": getattr(state, "home_misaligned", False),
     }
 
 

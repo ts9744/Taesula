@@ -84,7 +84,12 @@ def _next_command():
 @router.post("/command/done")
 def command_done(report: CommandDoneRequest):
     with state.lock:
-        return _command_done(report)
+        result = _command_done(report)
+    if result.get("returned_home"):
+        # 카메라 촬영이 최대 몇 초 걸릴 수 있어 lock 밖에서 한다
+        from server.routers import apriltag
+        result["home_check"] = apriltag.after_return_home()
+    return result
 
 
 def _command_done(report: CommandDoneRequest):

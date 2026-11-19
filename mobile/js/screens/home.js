@@ -39,13 +39,48 @@ export default {
         pollStatus();
       } catch (e) { toast(e.message, 'error'); }
     }));
+    // --- 복귀 후 홈 위치가 어긋났을 때 (AprilTag). 대기열 출발이 멈춘다
+    const recheckBtn = btn('위치 다시 확인', { kind: 'primary', icon: 'refresh', block: true });
+    const placeBtn = btn('시작점에 놓기', { block: true });
+    recheckBtn.hidden = placeBtn.hidden = true;
+    recheckBtn.addEventListener('click', () => busy(recheckBtn, async () => {
+      try {
+        const r = await api.homeCheck();
+        toast(r.ok ? '홈 위치가 맞습니다. 대기 중인 배송을 이어갑니다.' : homeCheckText(r), r.ok ? 'ok' : 'error');
+        pollStatus();
+      } catch (e) { toast(e.message, 'error'); }
+    }));
+    placeBtn.addEventListener('click', () => busy(placeBtn, async () => {
+      try {
+        await api.placeAtStart();
+        toast('시작점에 놓은 것으로 처리했습니다.', 'ok');
+        pollStatus();
+      } catch (e) { toast(e.message, 'error'); }
+    }));
     const navAlert = h('div', { class: 'nav-alert', role: 'status' },
-      h('div', { class: 'row' }, icon('alert', 18, 2), navText), resumeBtn);
+      h('div', { class: 'row' }, icon('alert', 18, 2), navText), resumeBtn, recheckBtn, placeBtn);
     navAlert.hidden = true;
+
+    function homeCheckText(hc) {
+      if (!hc) return '';
+      if (hc.reason === 'tag_not_found') return '홈 앞 태그가 보이지 않습니다. 태그를 가리는 물건이 있는지 확인하세요.';
+      if (hc.reason === 'camera_error') return `카메라 오류로 홈 위치를 확인하지 못했습니다. (${hc.detail || ''})`;
+      const [dx, dy] = hc.error_cm || [0, 0];
+      const lr = dx > 0 ? `오른쪽 ${dx}cm` : `왼쪽 ${-dx}cm`;
+      const fb = dy > 0 ? `뒤로 ${dy}cm` : `앞으로 ${-dy}cm`;
+      return `복귀한 로봇이 홈 칸 중앙에서 ${lr}, ${fb} 벗어나 있습니다. 로봇을 맞춰 놓고 다시 확인하거나 시작점에 놓기를 누르세요.`;
+    }
 
     function setNav(ob) {
       const nav = ob ? ob.nav_status : 'idle';
-      if (nav === 'manual_required') {
+      recheckBtn.hidden = placeBtn.hidden = true;
+      resumeBtn.hidden = true;
+      if (ob && ob.home_misaligned) {
+        navText.textContent = homeCheckText(ob.home_check);
+        navAlert.classList.add('manual');
+        recheckBtn.hidden = placeBtn.hidden = false;
+        navAlert.hidden = false;
+      } else if (nav === 'manual_required') {
         navText.textContent = '갈 수 있는 길이 모두 막혀 로봇이 멈췄습니다. 장애물을 치운 뒤 지도에서 막힌 칸을 눌러 해제해 주세요. 한꺼번에 풀려면 다시 시도를 누르세요.';
         navAlert.classList.add('manual');
         resumeBtn.hidden = false;

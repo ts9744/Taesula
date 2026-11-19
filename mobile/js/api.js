@@ -120,6 +120,8 @@ export const api = {
     manualBlock: (x, y, blocked) =>
     request("POST", "/robot/manual-block", { json: { x, y, blocked } }),
   placeAtStart: () => request("POST", "/robot/place-at-start"),
+  homeCheck: () => request("POST", "/apriltag/home-check", { timeout: 8000 }),
+  tagCalibrate: () => request("POST", "/apriltag/calibrate", { timeout: 8000 }),
   setRobotStatus: (current_x, current_y, status) =>
     request("PUT", "/robot/status", {
       params: { current_x, current_y, status },

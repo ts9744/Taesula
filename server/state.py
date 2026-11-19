@@ -16,7 +16,11 @@ mission = None          # "deliver"(배송 중) / "return"(홈 복귀 중) / Non
 return_at = None        # 자동 복귀 예약 시각 (time.time() 기준)
 
 
-placed_at = 0.0   # 마지막으로 '시작점에 놓기'를 한 시각 (브리지 halt 해제 신호)
+placed_at = 0.0
+
+# AprilTag 홈 위치 확인 (server/routers/apriltag.py)
+home_check = None       # 마지막 확인 결과
+home_misaligned = False # True 면 대기열 출발/새 배송을 막는다 (시작점에 놓기 또는 다시 확인으로 해제)   # 마지막으로 '시작점에 놓기'를 한 시각 (브리지 halt 해제 신호)
 
 # 배송 대기열: 배송·복귀 중에 인식된 물품은 여기 쌓였다가,
 # 로봇이 시작점에 돌아오면 먼저 인식된 순서대로 시작점에서 출발한다.

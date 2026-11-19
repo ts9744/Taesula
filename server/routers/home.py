@@ -167,6 +167,7 @@ def maybe_start_queued(now=None):
             or getattr(state, "return_at", None) is not None
             or bool(state.current_path)
             or getattr(state, "pending_move", None) is not None
+            or getattr(state, "home_misaligned", False)      # 홈 위치가 어긋남 (AprilTag)
         )
         if busy:
             state.next_start_at = None
