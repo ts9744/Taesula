@@ -65,6 +65,9 @@ export default {
       if (!hc) return '';
       if (hc.reason === 'tag_not_found') return '홈 앞 태그가 보이지 않습니다. 태그를 가리는 물건이 있는지 확인하세요.';
       if (hc.reason === 'camera_error') return `카메라 오류로 홈 위치를 확인하지 못했습니다. (${hc.detail || ''})`;
+      if (hc.reason === 'too_far') return '홈에서 너무 많이 벗어나 자동 보정을 하지 않았습니다. 로봇을 홈에 놓고 시작점에 놓기를 누르세요.';
+      if (hc.reason === 'too_many_steps' || hc.reason === 'not_moving') return '자동 보정으로 홈 위치를 맞추지 못했습니다. 로봇을 맞춰 놓고 다시 확인하세요.';
+      if (String(hc.reason).startsWith('esp32:')) return '자동 보정 중 로봇이 명령을 수행하지 못했습니다(장애물 등). 주변을 확인하고 다시 확인을 누르세요.';
       const [dx, dy] = hc.error_cm || [0, 0];
       const lr = dx > 0 ? `오른쪽 ${dx}cm` : `왼쪽 ${-dx}cm`;
       const fb = dy > 0 ? `뒤로 ${dy}cm` : `앞으로 ${-dy}cm`;
@@ -75,7 +78,13 @@ export default {
       const nav = ob ? ob.nav_status : 'idle';
       recheckBtn.hidden = placeBtn.hidden = true;
       resumeBtn.hidden = true;
-      if (ob && ob.home_misaligned) {
+      if (ob && ob.tag_job) {
+        navText.textContent = ob.tag_job.kind === 'measure'
+          ? `이동 거리를 재는 중입니다 (${ob.tag_job.step || 0}). 로봇 주변을 비워 주세요.`
+          : `홈 위치를 자동으로 맞추는 중입니다 (${ob.tag_job.step}번째).`;
+        navAlert.classList.remove('manual');
+        navAlert.hidden = false;
+      } else if (ob && ob.home_misaligned) {
         navText.textContent = homeCheckText(ob.home_check);
         navAlert.classList.add('manual');
         recheckBtn.hidden = placeBtn.hidden = false;
@@ -219,7 +228,7 @@ export default {
         const hasPos = r.current_x != null && r.current_y != null;
         pos.textContent = hasPos ? `(${r.current_x}, ${r.current_y})` : '—';
         // 경로 끝의 stop 은 이동이 아니므로 세지 않는다 (지금 이동 중인 묶음은 이미 경로에서 빠져 있다)
-        const remaining = (s.current_path || []).filter((c) => c !== 'stop').length;
+        const remaining = (s.current_path || []).filter((c) => c !== 'stop' && !String(c).startsWith('raw:')).length;
         state.textContent = `${robotStatusLabel(r.status)}${remaining ? ` · 남은 이동 ${remaining}칸` : ''}`;
         setMap(hasPos ? { x: r.current_x - 1, y: r.current_y - 1 } : null, blocked);
         setStage(r.status);

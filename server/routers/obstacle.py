@@ -358,6 +358,8 @@ def get_obstacles():
         "path": path,
         "home_check": getattr(state, "home_check", None),
         "home_misaligned": getattr(state, "home_misaligned", False),
+        "tag_job": (None if not getattr(state, "tag_job", None) else
+                    {"kind": state.tag_job["kind"], "step": state.tag_job["step"]}),
     }
 
 

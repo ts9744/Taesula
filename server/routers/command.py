@@ -61,6 +61,14 @@ def _next_command():
     command = state.current_path.pop(0)
     steps = 1
 
+    # AprilTag 보정/측정용 명령 (nudge 등): 그대로 ESP32 로 보낸다. DB 위치는 바꾸지 않는다
+    if isinstance(command, str) and command.startswith("raw:"):
+        line = command[4:]
+        state.current_command = "raw"
+        state.current_steps = 0
+        return {"direction": "raw", "steps": 0, "line": line, "expect": f"DONE {line}",
+                "remaining_path": state.current_path}
+
     if command in MOVE_DELTA:
         while state.current_path and state.current_path[0] == command:
             state.current_path.pop(0)

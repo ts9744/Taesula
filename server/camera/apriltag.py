@@ -20,6 +20,7 @@ TAG_SIZE_CM = 10.0        # 태그 검은 부분 한 변 (인쇄 후 자로 재�
 CAMERA_OFFSET_CM = 10.0   # 로봇 중심 -> 카메라 렌즈 (앞쪽으로). 실측해서 맞출 것
 TAG_GAP_CM = 10.0         # 북쪽 가장자리 -> 태그 판
 HOME_TOL_CM = 5.0         # 홈 중앙에서 이만큼까지는 정상
+YAW_TOL_DEG = 3.0         # 이만큼까지 틀어진 건 정상 (틀어짐을 잴 수 있을 때만)
 SINGLE_PNP_MIN_PX = 120   # 태그 1개만 보일 때 이 크기(px) 이상이면 그 태그 하나로 틀어짐까지 푼다
 
 _dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_36h11)
@@ -163,15 +164,16 @@ def locate(tags, ref, cols):
             "offset_cm": [round(x - cxm, 1), round(y - cym, 1)]}
 
 
-def check_home(tags, ref, home, cols, tol_cm=HOME_TOL_CM):
-    """홈 칸 중앙에 제대로 서 있는지.
+def check_home(tags, ref, home, cols, tol_cm=HOME_TOL_CM, yaw_tol_deg=YAW_TOL_DEG):
+    """홈 칸 중앙에 제대로 서 있는지. 틀어짐(yaw)을 잴 수 있으면 yaw_tol_deg 도 본다.
 
-    반환: {"ok": bool, "reason", "error_cm": [dx, dy] 또는 None, "located": locate 결과}
+    반환: {"ok": bool, "reason", "error_cm": [dx, dy] 또는 None, "yaw_deg", "located": locate 결과}
     """
     loc = locate(tags, ref, cols)
     if loc is None:
-        return {"ok": False, "reason": "tag_not_found", "error_cm": None, "located": None}
+        return {"ok": False, "reason": "tag_not_found", "error_cm": None, "yaw_deg": None, "located": None}
     hx, hy = cell_center_cm(home)
     dx, dy = round(loc["x_cm"] - hx, 1), round(loc["y_cm"] - hy, 1)
-    ok = abs(dx) <= tol_cm and abs(dy) <= tol_cm
-    return {"ok": ok, "reason": "ok" if ok else "misaligned", "error_cm": [dx, dy], "located": loc}
+    yaw = loc["yaw_deg"]
+    ok = abs(dx) <= tol_cm and abs(dy) <= tol_cm and (yaw is None or abs(yaw) <= yaw_tol_deg)
+    return {"ok": ok, "reason": "ok" if ok else "misaligned", "error_cm": [dx, dy], "yaw_deg": yaw, "located": loc}
