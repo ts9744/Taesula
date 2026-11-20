@@ -65,6 +65,7 @@ export default {
       if (!hc) return '';
       if (hc.reason === 'tag_not_found') return '홈 앞 태그가 보이지 않습니다. 태그를 가리는 물건이 있는지 확인하세요.';
       if (hc.reason === 'camera_error') return `카메라 오류로 홈 위치를 확인하지 못했습니다. (${hc.detail || ''})`;
+      if (hc.reason === 'recalibrate') return hc.detail || '카메라 설정이 바뀌었습니다. 설정에서 AprilTag 기준 등록을 다시 하세요.';
       if (hc.reason === 'too_far') return '홈에서 너무 많이 벗어나 자동 보정을 하지 않았습니다. 로봇을 홈에 놓고 시작점에 놓기를 누르세요.';
       if (hc.reason === 'too_many_steps' || hc.reason === 'not_moving') return '자동 보정으로 홈 위치를 맞추지 못했습니다. 로봇을 맞춰 놓고 다시 확인하세요.';
       if (String(hc.reason).startsWith('esp32:')) return '자동 보정 중 로봇이 명령을 수행하지 못했습니다(장애물 등). 주변을 확인하고 다시 확인을 누르세요.';
@@ -330,6 +331,7 @@ function aprilTagSettings() {
     try {
       const r = await api.tagDetect();
       if (!r.calibrated) return toast('기준이 없습니다. 먼저 기준 등록을 하세요.', 'error');
+      if (r.recalibrate) return toast(r.recalibrate, 'error');
       if (!r.located) return toast(`태그로 위치를 잴 수 없습니다. (보이는 태그 ${r.tags.length}개)`, 'error');
       const l = r.located;
       toast(`(${l.cell[0]}, ${l.cell[1]}) 칸 중앙에서 x ${l.offset_cm[0]}cm, y ${l.offset_cm[1]}cm${l.yaw_deg == null ? '' : `, ${l.yaw_deg}°`} · 태그 ${l.tag_ids.join(',')}`, 'ok');

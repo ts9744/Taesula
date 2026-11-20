@@ -813,7 +813,7 @@ a:focus-visible,
 /* ---------- 인식 ---------- */
 .camera {
   position: relative;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 3 / 4;   /* 카메라를 90도 돌려 써서 세로 화면 (server/camera/camera.py CAMERA_ROTATE) */
   border-radius: 16px;
   background: #1a2326;
   overflow: hidden;

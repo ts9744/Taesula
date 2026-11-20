@@ -2,7 +2,8 @@
 
 배치 규칙
   - 태그는 격자 북쪽 가장자리 바깥에 세워서 붙인다. 로봇은 항상 북쪽을 보므로 전면 카메라에 보인다.
-  - 태그 ID = 그 태그가 붙은 열 번호 x (0부터). 태그 중심은 그 열의 가운데 위.
+  - 태그 ID 0 = 0열 가운데 위, 그다음 ID 부터 TAG_PITCH_CM 간격으로 동쪽으로.
+    TAG_PITCH_CM = 34 이면 ID = 열 번호, 17 이면 짝수 ID = 열 가운데(열 번호 x2), 홀수 ID = 열 경계.
   - 태그 판은 북쪽 가장자리에서 TAG_GAP_CM 만큼 떨어뜨린다.
     (초음파 STOP_DISTANCE_CM = 10 이라, 붙여 두면 맨 윗줄로 갈 때 태그 판을 장애물로 본다)
 
@@ -22,6 +23,9 @@ TAG_GAP_CM = 10.0         # 북쪽 가장자리 -> 태그 판
 HOME_TOL_CM = 5.0         # 홈 중앙에서 이만큼까지는 정상
 YAW_TOL_DEG = 3.0         # 이만큼까지 틀어진 건 정상 (틀어짐을 잴 수 있을 때만)
 SINGLE_PNP_MIN_PX = 120   # 태그 1개만 보일 때 이 크기(px) 이상이면 그 태그 하나로 틀어짐까지 푼다
+EDGE_MARGIN_PX = 8        # 화면 가장자리에서 이만큼 안쪽에 있어야 쓴다
+TAG_PITCH_CM = 17.0       # 태그 간격. 34 = 열마다 1개 (ID = 열 번호)
+                          # 17 = 반 칸마다 1개 (짝수 ID = 열 가운데, 홀수 ID = 열 경계). 카메라를 세로로 쓰면 17 권장
 
 _dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_36h11)
 _params = cv2.aruco.DetectorParameters()
@@ -39,9 +43,15 @@ def detect_tags(frame_bgr):
     tags = []
     if ids is None:
         return tags
+    H, W = gray.shape[:2]
     for c, i in zip(corners, ids.ravel()):
         p = c.reshape(4, 2)
         sides = [np.linalg.norm(p[k] - p[(k + 1) % 4]) for k in range(4)]
+        # 화면 가장자리에 걸친 태그는 꼭짓점이 부정확해서 쓰지 않는다 (흰 여백까지 화면 안에 있어야 함)
+        margin = max(EDGE_MARGIN_PX, 0.25 * float(np.mean(sides)))
+        if (p[:, 0].min() < margin or p[:, 1].min() < margin
+                or p[:, 0].max() > W - 1 - margin or p[:, 1].max() > H - 1 - margin):
+            continue
         tags.append({
             "id": int(i),
             "cx": float(p[:, 0].mean()),
@@ -59,7 +69,18 @@ def cell_center_cm(cell):
 
 
 def _tag_x_cm(tag_id):
-    return (tag_id + 0.5) * CELL_CM
+    """태그 중심의 x(cm). ID 0 = 0열 가운데, 그다음부터 TAG_PITCH_CM 간격."""
+    return CELL_CM / 2 + tag_id * TAG_PITCH_CM
+
+
+def tag_count(cols):
+    """격자 폭에 들어가는 태그 수 (ID 0 ~ tag_count-1)."""
+    return int(round((cols - 1) * CELL_CM / TAG_PITCH_CM)) + 1
+
+
+def home_tag_id(home):
+    """홈 칸 바로 앞(북쪽) 태그 ID."""
+    return int(round(home[0] * CELL_CM / TAG_PITCH_CM))
 
 
 def _camera_to_tag_cm(robot_y_cm):
@@ -67,13 +88,17 @@ def _camera_to_tag_cm(robot_y_cm):
     return robot_y_cm + TAG_GAP_CM - CAMERA_OFFSET_CM
 
 
-def calibrate(tags, home, cols):
-    """로봇이 홈 칸 중앙에 있을 때의 태그로 기준값을 만든다. 실패하면 (None, 이유)."""
-    known = [t for t in tags if t["id"] == home[0]]          # 홈 열의 태그로만 기준을 잡는다
+def calibrate(tags, home, cols, frame_size=(1280, 720)):
+    """로봇이 홈 칸 중앙에 있을 때의 태그로 기준값을 만든다. 실패하면 (None, 이유).
+
+    frame_size: (가로, 세로) px. 카메라를 90도 돌려 쓰면 (720, 1280).
+    """
+    hid = home_tag_id(home)
+    known = [t for t in tags if t["id"] == hid]              # 홈 칸 바로 앞 태그로만 기준을 잡는다
     if not known:
         seen = sorted({t["id"] for t in tags})
-        return None, (f"홈 열 태그(ID {home[0]})가 보이지 않습니다. 보이는 태그: {seen or '없음'}. "
-                      "홈 칸 바로 북쪽에 ID = 열 번호 태그를 붙였는지 확인하세요.")
+        return None, (f"홈 칸 앞 태그(ID {hid})가 보이지 않습니다. 보이는 태그: {seen or '없음'}. "
+                      f"홈 칸 바로 북쪽에 ID {hid} 태그를 붙였는지 확인하세요 (TAG_PITCH_CM = {TAG_PITCH_CM:g}).")
     t = known[0]
     hx, hy = cell_center_cm(home)
     d = _camera_to_tag_cm(hy)
@@ -82,11 +107,11 @@ def calibrate(tags, home, cols):
     fx = t["size_px"] * d / TAG_SIZE_CM
     lateral = _tag_x_cm(t["id"]) - hx               # 태그가 카메라보다 오른쪽(+)
     cx0 = t["cx"] - fx * lateral / d
-    ref = {"fx": fx, "cx0": cx0, "cy0": 360.0, "tag_id": t["id"],
+    ref = {"fx": fx, "cx0": cx0, "cy0": frame_size[1] / 2.0, "frame": list(frame_size), "tag_id": t["id"],
            "home": list(home), "size_px": round(t["size_px"], 2)}
 
     # 태그가 2개 이상 보이면 PnP 결과가 홈 칸 중앙과 맞도록 fx, cx0 를 다듬는다
-    multi = [k for k in tags if 0 <= k["id"] < cols]
+    multi = [k for k in tags if 0 <= k["id"] < tag_count(cols)]
     if len({k["id"] for k in multi}) >= 2:
         for _ in range(5):
             res = _locate_pnp(multi, ref)
@@ -140,7 +165,7 @@ def locate(tags, ref, cols):
     반환: {"tag_ids", "method", "x_cm", "y_cm", "yaw_deg", "cell": [x, y], "offset_cm": [dx, dy]}
           offset_cm = 그 칸 중앙에서 벗어난 양 (dx: 동쪽 +, dy: 남쪽 +)
     """
-    known = [t for t in tags if 0 <= t["id"] < cols]
+    known = [t for t in tags if 0 <= t["id"] < tag_count(cols)]
     if not known or ref is None:
         return None
     yaw = None

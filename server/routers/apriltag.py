@@ -162,9 +162,26 @@ def _measure(settle=True):
     except HTTPException as e:
         return {"ok": False, "reason": "camera_error", "detail": e.detail, "error_cm": None,
                 "yaw_deg": None, "located": None, "home": _app(home)}
+    if not _same_frame(ref, frame):
+        return {"ok": False, "reason": "recalibrate", "detail": _frame_msg(ref, frame), "error_cm": None,
+                "yaw_deg": None, "located": None, "home": _app(home)}
     r = tagmod.check_home(tagmod.detect_tags(frame), ref, home, _cols())
     r["home"] = _app(home)
     return r
+
+
+def _frame_size(frame):
+    return [int(frame.shape[1]), int(frame.shape[0])]
+
+
+def _same_frame(ref, frame):
+    """기준을 잡을 때와 화면 크기(회전)가 같은지. 예전 기준(frame 없음)은 1280x720 으로 본다."""
+    return list(ref.get("frame", [1280, 720])) == _frame_size(frame)
+
+
+def _frame_msg(ref, frame):
+    a, b = ref.get("frame", [1280, 720]), _frame_size(frame)
+    return f"카메라 화면이 {a[0]}x{a[1]} 에서 {b[0]}x{b[1]} 로 바뀌었습니다 (회전 설정 변경). 기준 등록을 다시 하세요."
 
 
 def _publish(result, misaligned):
@@ -231,7 +248,7 @@ def _finish(job, r, ok, reason=None):
 
 def _next_correction(job, r):
     """r(방금 잰 결과)를 보고 다음 nudge 를 내거나 끝낸다. state.lock 안에서 부른다."""
-    if r["reason"] in ("tag_not_found", "camera_error"):
+    if r["reason"] in ("tag_not_found", "camera_error", "recalibrate"):
         return _finish(job, r, False, r["reason"])
     if r["ok"]:                                    # 허용 범위(5cm, 3도) 안이면 끝
         return _finish(job, r, True)
@@ -337,7 +354,7 @@ def _measure_summary(job):
 
 
 def _next_measure(job, r):
-    if r["reason"] in ("tag_not_found", "camera_error"):
+    if r["reason"] in ("tag_not_found", "camera_error", "recalibrate"):
         return _finish(job, r, False, r["reason"])
     if not job["queue"]:
         job["summary"] = _measure_summary(job)
@@ -391,8 +408,8 @@ def measure_moves(p: MeasureParams = MeasureParams()):
     if p.reset:
         clear_samples()
     r = _measure(settle=False)
-    if r is None or r["reason"] in ("tag_not_found", "camera_error"):
-        raise HTTPException(status_code=400, detail=f"태그로 위치를 잴 수 없습니다: {r and r['reason']}")
+    if r is None or r["reason"] in ("tag_not_found", "camera_error", "recalibrate"):
+        raise HTTPException(status_code=400, detail=f"태그로 위치를 잴 수 없습니다: {r and (r.get('detail') or r['reason'])}")
     with state.lock:
         job = {"kind": "measure", "status": "running", "step": 0, "history": [], "queue": list(probes),
                "params": p.model_dump(), "started_at": time.time()}
@@ -453,8 +470,9 @@ def calibrate():
     home, cols = _home(), _cols()
     if home is None or not cols:
         raise HTTPException(status_code=400, detail="격자 지도 또는 시작점이 없습니다.")
-    tags = tagmod.detect_tags(capture())
-    ref, err = tagmod.calibrate(tags, home, cols)
+    frame = capture()
+    tags = tagmod.detect_tags(frame)
+    ref, err = tagmod.calibrate(tags, home, cols, frame_size=_frame_size(frame))
     if ref is None:
         raise HTTPException(status_code=400, detail=err)
     save_ref(ref)
@@ -465,8 +483,12 @@ def calibrate():
 
 @router.get("/apriltag/detect")
 def detect():
-    tags = tagmod.detect_tags(capture())
+    frame = capture()
+    tags = tagmod.detect_tags(frame)
     ref, cols = load_ref(), _cols()
+    if ref is not None and not _same_frame(ref, frame):
+        return {"calibrated": True, "recalibrate": _frame_msg(ref, frame),
+                "tags": [{k: t[k] for k in ("id", "cx", "cy", "size_px")} for t in tags], "located": None}
     loc = tagmod.locate(tags, ref, cols)
     if loc:
         loc["cell"] = _app(loc["cell"])
