@@ -51,7 +51,7 @@ const int ENC_COUNT = 4;
 const char* WHEEL_NAME[ENC_COUNT] = {"FL", "FR", "RL", "RR"};
 const int   ENC_PINS[ENC_COUNT]   = {27, 33, 14, 36};   // P27, P33, P14, SVP(36)
 const unsigned long ENC_MIN_GAP_US = 200;                // 너무 짧은 간격 펄스는 노이즈로 무시
-const bool PRINT_ENCODER = true;                         // 실제 주행 땐 false 추천
+bool PRINT_ENCODER = false;                              // debug on 으로 켜기 (시연 땐 off)
 
 volatile unsigned long encCount[ENC_COUNT] = {0, 0, 0, 0};
 volatile unsigned long encLastUs[ENC_COUNT] = {0, 0, 0, 0};
@@ -100,8 +100,53 @@ const bool RR_INV = true;
 // ===============================
 // 이동 설정
 // ===============================
+// [2026-11-19] 한 칸 = 34cm. 실측 후 값 확정 -> robot_bridge.py FORWARD_RUN_MS 도 같은 값으로
 const unsigned long FORWARD_RUN_MS = 1000;   // 1칸 이동 시간 (전진/후진)
-const unsigned long STRAFE_RUN_MS  = 1000;   // 1칸 이동 시간 (좌/우)
+const unsigned long STRAFE_RUN_MS  = 1000;   // 1칸 이동 시간 (좌/우) - 따로 실측
+
+// 명령마다 감속+브레이크로 더 가는 거리를 시간으로 빼주기 (1칸/3칸 실측으로 계산, 처음엔 0)
+const unsigned long FORWARD_OVERSHOOT_MS = 0;
+const unsigned long STRAFE_OVERSHOOT_MS  = 0;
+
+// ===============================
+// [2026-11-19] 엔코더로 거리 재기 (시간 대신 펄스로 칸 세기)
+//   - 4바퀴 평균 펄스가 목표에 닿으면 멈춤 (안 들어오는 바퀴는 빼고 평균)
+//   - 엔코더가 다 안 들어오면 그 이동은 자동으로 시간 방식(RUN_MS)으로 돌아감
+//   - 보정: debug on -> forward 3 -> 'ENCAVG' 의 got 값 / 실제 거리(cm) = PULSES_PER_CM
+//           멈춘 뒤 목표보다 더 간 만큼(got - target 평균)을 STOP_EARLY_PULSES 에
+//   - OBSTACLE/STOPPED 의 ms 값은 '펄스를 RUN_MS 기준 시간으로 환산한 값' (브릿지 그대로 사용 가능)
+// ===============================
+bool USE_ENC_DIST = true;                 // encdist on/off 로 바꿀 수 있음
+const float CELL_CM = 34.0;
+const float PULSES_PER_CM_FWD    = 32.5;  // 2026-11-19 실측: forward 2 -> 4014펄스 / 123.5cm (2층 짐 올린 상태)
+const float PULSES_PER_CM_STRAFE = 32.3;  // 2026-11-19 실측: right 2 -> 약 3989펄스 / 평균 123.5cm
+const long  STOP_EARLY_PULSES_FWD    = 410; // 2026-11-19 실측: 멈출 때 약 410펄스(12.6cm) 더 감
+const long  STOP_EARLY_PULSES_STRAFE = 265; // 2026-11-19 실측: right 2 = 63cm -> 68cm 되게 조정
+
+long  gTargetPulses = 0;      // 0 이면 시간 방식
+long  gStopEarly = 0;
+float gPulsesPerCell = 1;
+unsigned long gRunMs = 1000;
+bool  gUsedEnc = false;       // 이번 이동이 실제로 엔코더 방식으로 끝났는지
+
+// ===============================
+// [2026-11-19] 제자리 회전 (AprilTag 방향 보정용)
+//   rotate 5  -> 오른쪽(시계)으로 5도 / rotate -5 -> 왼쪽으로 5도
+//   엔코더 4바퀴 평균 펄스로 각도를 셈. 응답: DONE rotate <각도>
+//   보정: rotate 360 -> 실제로 돈 각도 A 측정 -> 새 값 = 지금 값 x 360 / A
+//         작은 각도(rotate 5)가 덜 돌면 ROTATE_STOP_EARLY 를 줄이고, 더 돌면 늘리기
+// ===============================
+const float ROTATE_PULSES_PER_DEG = 16.0;   // 추정값, 실측 필요
+const int   ROTATE_SPEED = 200;             // 너무 낮으면 작은 각도에서 안 움직임
+const long  ROTATE_STOP_EARLY = 0;          // 브레이크로 더 도는 펄스
+const int   ROTATE_MAX_DEG = 180;
+
+// [2026-11-19] 장애물로 멈춘 뒤 칸 중앙으로 복귀
+//   이번 칸에서 움직인 ms 만큼 반대 방향으로 이동 -> 칸 중앙에서 OBSTACLE 출력
+//   복귀 후 중앙보다 '뒤'에 서면 RETURN_TRIM_MS 를 올리고, '앞'에 서면 내리기
+const bool RETURN_TO_CENTER = true;
+const unsigned long RETURN_TRIM_MS = 100;    // 복귀 감속 구간에서 더 가는 만큼 빼기
+const unsigned long RETURN_MIN_MS  = 60;     // 이보다 짧으면 복귀 안 함
 
 const int MOTOR_SPEED  = 255;
 const int STRAFE_SPEED = 255;
@@ -141,7 +186,7 @@ const float LRR_TRIM = 0.80;
 const float STOP_DISTANCE_CM = 10.0;            // 이 거리 이하면 정지
 const unsigned long SENSOR_INTERVAL_MS = 50;    // 이동 중 측정 간격
 const int CONFIRM_COUNT = 2;                    // 연속 2번 이하일 때만 정지 (튀는 값 무시)
-const bool PRINT_DISTANCE = true;               // 이동 중 거리 출력 (테스트용, 실제 주행 땐 false 추천)
+bool PRINT_DISTANCE = false;                    // debug on 으로 켜기 (시연 땐 off)
 const unsigned long MOVE_TIMEOUT_US = 6000;     // 이동 중엔 약 1m 까지만 측정 (빨리 끝나게)
 const unsigned long DIST_TIMEOUT_US = 30000;    // dist/scan 땐 약 5m 까지
 
@@ -173,7 +218,16 @@ const unsigned long SYNC_MS       = 50;    // 보정 주기
 const unsigned long SYNC_START_MS = 150;   // 출발 직후는 보정 안 함 (가속 구간)
 const float SYNC_KP     = 1.0;             // 펄스 1개 차이당 PWM 몇 만큼 보정
 const int   SYNC_MAX_ADJ = 60;             // 보정 최대치 (PWM)
-int  syncAdj[4] = {0, 0, 0, 0};            // 바퀴별 보정값 FL, FR, RL, RR
+int  syncAdj[4] = {0, 0, 0, 0};
+
+// [2026-11-19] 좌우 이동 때 바퀴별 목표 비율 (sync 가 이 비율로 맞춤) 순서: FL, FR, RL, RR
+//   sync 는 4바퀴 펄스를 똑같이 맞추는데, 좌우 이동은 롤러가 미끄러져서 펄스가 같아도 비스듬히 감
+//   right 가 위(앞)로 뜨면 FL, RR 값을 0.05 씩 낮추기 / 아래(뒤)로 처지면 올리기
+//   left  가 아래(뒤)로 처지면 FL, RR 값을 0.05 씩 낮추기 / 위(앞)로 뜨면 올리기
+float SYNC_W_RIGHT[4] = {0.90, 1.00, 1.00, 0.90};
+float SYNC_W_LEFT[4]  = {0.95, 1.00, 1.00, 0.95};   // 2026-11-19: left 2 에서 4cm 위로 떠서 0.85 -> 0.90
+const float SYNC_W_ONE[4] = {1.00, 1.00, 1.00, 1.00};
+const float* syncW = SYNC_W_ONE;            // 바퀴별 보정값 FL, FR, RL, RR
 bool syncActive = false;
 
 String lineBuf;       // 평소 명령 받는 버퍼
@@ -206,6 +260,63 @@ void printAllDistances();
 
 void encReset();
 void printEncoder(int mode);   // 0 = 전진/후진, 1 = right, 2 = left
+long encAvg();
+void rotateInPlace(int deg);
+
+
+// 4바퀴 평균 펄스 (최대값의 절반도 안 되는 바퀴 = 선 빠짐으로 보고 제외)
+long encAvg() {
+  unsigned long c[4], mx = 0;
+  for (int i = 0; i < 4; i++) { c[i] = encCount[i]; if (c[i] > mx) mx = c[i]; }
+  if (mx == 0) return 0;
+  unsigned long sum = 0; int n = 0;
+  for (int i = 0; i < 4; i++) if (c[i] * 2 >= mx) { sum += c[i]; n++; }
+  return (long)(sum / n);
+}
+
+// 제자리 회전 (오른쪽 = 왼쪽 바퀴 전진 + 오른쪽 바퀴 후진)
+void rotateInPlace(int deg) {
+  bool cw = (deg > 0);
+  long target = (long)((cw ? deg : -deg) * ROTATE_PULSES_PER_DEG) - ROTATE_STOP_EARLY;
+  if (target < 1) target = 1;
+
+  syncActive = false;
+  encReset();
+  digitalWrite(LED_PIN, HIGH);
+  driveMotor(FL_IN1, FL_IN2,  cw, FL_INV, ROTATE_SPEED);
+  driveMotor(RL_IN1, RL_IN2,  cw, RL_INV, ROTATE_SPEED);
+  driveMotor(FR_IN1, FR_IN2, !cw, FR_INV, ROTATE_SPEED);
+  driveMotor(RR_IN1, RR_IN2, !cw, RR_INV, ROTATE_SPEED);
+
+  unsigned long start = millis();
+  unsigned long limit = (unsigned long)target + 1000;          // 엔코더 이상 대비 시간 제한
+  bool stopped = false;
+  while (encAvg() < target && millis() - start < limit) {
+    if (pollStopDuringMove()) { stopped = true; break; }
+  }
+
+  currentAction = nullptr;   // 작은 각도라 감속 없이 바로 브레이크
+  stopMotor();
+  delay(100);
+
+  if (PRINT_ENCODER) {
+    Serial.println();
+    Serial.print("ROT target ");
+    Serial.print(target);
+    Serial.print(" got ");
+    Serial.println(encAvg());
+  }
+  if (!stopped && encAvg() < target) {
+    Serial.println();
+    Serial.println("ROTATE TIMEOUT (엔코더 확인)");
+  }
+}
+
+// 펄스 -> RUN_MS 기준 시간(ms)으로 환산
+unsigned long pulsesToMs(long pulses) {
+  if (pulses < 0) pulses = 0;
+  return (unsigned long)((float)pulses / gPulsesPerCell * (float)gRunMs);
+}
 
 
 // ===============================
@@ -244,7 +355,7 @@ void setup() {
 
   delay(300);
 
-  Serial.println("READY (sonar4 + encoder + sync, sonar ON, sync ON)");
+  Serial.println("READY (sonar4 + encoder + sync + encdist + rotate + nudge, sonar ON)");
 }
 
 
@@ -318,6 +429,93 @@ void handleLine(String line) {
   // -------------------------------
   // 초음파 감지 켜기/끄기
   // -------------------------------
+  // 짧은 위치 보정: nudge <forward|backward|left|right> <cm>  (1~15cm, 가는 방향 센서 확인)
+  //   응답: DONE nudge <방향> <cm>  / 막히면 OBSTACLE nudge <방향> 0 0 <거리>
+  if (dir == "nudge") {
+    int sp2 = arg.indexOf(' ');
+    String nd = (sp2 == -1) ? arg : arg.substring(0, sp2);
+    int cm = (sp2 == -1) ? 0 : arg.substring(sp2 + 1).toInt();
+    if (cm < 1) { Serial.print("DONE nudge "); Serial.print(nd); Serial.println(" 0"); return; }
+    if (cm > 15) cm = 15;
+
+    void (*na)() = nullptr;
+    int ns = -1;
+    bool st = false;
+    if (nd == "forward")       { na = moveForward;  ns = S_FRONT; }
+    else if (nd == "backward") { na = moveBackward; ns = S_BACK; }
+    else if (nd == "left")     { na = strafeLeft;   ns = S_LEFT;  st = true; }
+    else if (nd == "right")    { na = strafeRight;  ns = S_RIGHT; st = true; }
+    else { Serial.println("ERR unknown " + line); return; }
+    if (!sonarEnabled) ns = -1;
+
+    gRunMs = st ? STRAFE_RUN_MS : FORWARD_RUN_MS;
+    gPulsesPerCell = CELL_CM * (st ? PULSES_PER_CM_STRAFE : PULSES_PER_CM_FWD);
+    gStopEarly = st ? STOP_EARLY_PULSES_STRAFE : STOP_EARLY_PULSES_FWD;
+    unsigned long nms = (unsigned long)((float)cm / CELL_CM * (float)gRunMs);
+    if (USE_ENC_DIST) {
+      gTargetPulses = (long)(cm * (st ? PULSES_PER_CM_STRAFE : PULSES_PER_CM_FWD));
+      if (gTargetPulses <= gStopEarly) gTargetPulses = gStopEarly + 1;
+      nms = nms * 2 + 500;
+    } else {
+      gTargetPulses = 0;
+    }
+
+    unsigned long nr = 0;
+    float nd2 = -1;
+    RunResult rr = runTimed(na, nms, ns, nr, nd2);
+    Serial.println();
+    if (rr == RUN_OBSTACLE) {
+      Serial.print("OBSTACLE nudge ");
+      Serial.print(nd);
+      Serial.print(" 0 0 ");
+      Serial.println(nd2, 1);
+    } else if (rr == RUN_STOPPED) {
+      Serial.println("DONE stop 0");
+    } else {
+      Serial.print("DONE nudge ");
+      Serial.print(nd);
+      Serial.print(' ');
+      Serial.println(cm);
+    }
+    return;
+  }
+
+
+  // 제자리 회전: rotate <각도>  (+ 오른쪽/시계, - 왼쪽/반시계)
+  if (dir == "rotate") {
+    int deg = arg.toInt();
+    if (deg == 0) { Serial.println("DONE rotate 0"); return; }
+    if (deg >  ROTATE_MAX_DEG) deg =  ROTATE_MAX_DEG;
+    if (deg < -ROTATE_MAX_DEG) deg = -ROTATE_MAX_DEG;
+    rotateInPlace(deg);
+    Serial.println();
+    Serial.print("DONE rotate ");
+    Serial.println(deg);
+    return;
+  }
+
+
+  // encdist on / off : 엔코더 거리 방식 켜기/끄기 (리셋하면 코드 기본값)
+  if (dir == "encdist") {
+    if (arg == "off") USE_ENC_DIST = false;
+    else if (arg == "on") USE_ENC_DIST = true;
+    Serial.print("ENCDIST ");
+    Serial.println(USE_ENC_DIST ? "ON" : "OFF");
+    return;
+  }
+
+
+  // debug on / debug off : 이동 중 거리 + 엔코더 출력 켜기/끄기 (리셋하면 OFF)
+  if (dir == "debug") {
+    bool on = (arg == "on");
+    PRINT_DISTANCE = on;
+    PRINT_ENCODER  = on;
+    Serial.print("DEBUG ");
+    Serial.println(on ? "ON" : "OFF");
+    return;
+  }
+
+
   if (dir == "sync") {
     if (arg == "off") syncEnabled = false;
     else if (arg == "on") syncEnabled = true;
@@ -454,7 +652,23 @@ void handleLine(String line) {
   float stopDist = -1;
 
   encReset();
-  RunResult r = runTimed(action, runMs * steps, sensor, ranMs, stopDist);
+  bool strafeMove = (dir == "left" || dir == "right");
+  unsigned long totalMs = runMs * steps;
+
+  gRunMs = runMs;
+  gPulsesPerCell = CELL_CM * (strafeMove ? PULSES_PER_CM_STRAFE : PULSES_PER_CM_FWD);
+  gStopEarly = strafeMove ? STOP_EARLY_PULSES_STRAFE : STOP_EARLY_PULSES_FWD;
+
+  if (USE_ENC_DIST) {
+    gTargetPulses = (long)(gPulsesPerCell * steps);
+    totalMs = runMs * steps * 2 + 500;          // 안전용 시간 제한 (엔코더 이상 대비)
+  } else {
+    gTargetPulses = 0;
+    unsigned long over = strafeMove ? STRAFE_OVERSHOOT_MS : FORWARD_OVERSHOOT_MS;
+    if (totalMs > over + 100) totalMs -= over;
+  }
+
+  RunResult r = runTimed(action, totalMs, sensor, ranMs, stopDist);
 
   if (PRINT_ENCODER) {
     printEncoder(dir == "right" ? 1 : (dir == "left" ? 2 : 0));
@@ -464,7 +678,31 @@ void handleLine(String line) {
   unsigned long msInCell  = ranMs % runMs;
 
   if (r == RUN_OBSTACLE) {
+    // 칸 중앙으로 복귀: 이번 칸에서 간 만큼 반대로 (센서 확인 없이, 감속 정지)
+    if (RETURN_TO_CENTER && msInCell > RETURN_MIN_MS + RETURN_TRIM_MS) {
+      void (*back)() = nullptr;
+      if (dir == "forward")       back = moveBackward;
+      else if (dir == "backward") back = moveForward;
+      else if (dir == "left")     back = strafeRight;
+      else if (dir == "right")    back = strafeLeft;
+
+      if (back != nullptr) {
+        delay(150);   // 완전히 멈춘 뒤 출발
+        unsigned long retRan = 0;
+        float dummy = -1;
+        unsigned long retMs = msInCell - RETURN_TRIM_MS;
+        if (USE_ENC_DIST) {
+          gTargetPulses = (long)((float)retMs / (float)gRunMs * gPulsesPerCell);
+          runTimed(back, retMs * 2 + 500, -1, retRan, dummy);
+        } else {
+          gTargetPulses = 0;
+          runTimed(back, retMs, -1, retRan, dummy);
+        }
+      }
+    }
+
     // 형식: OBSTACLE <방향> <끝낸 칸 수> <이번 칸에서 움직인 ms> <거리 cm>
+    //   (출력 시점엔 이미 칸 중앙. 끝낸 칸 수 = 지금 서 있는 칸, ms/거리는 장애물 거리 계산용)
     Serial.println();
     Serial.print("OBSTACLE ");
     Serial.print(dir);
@@ -521,6 +759,12 @@ RunResult runTimed(
   for (int i = 0; i < 4; i++) syncAdj[i] = 0;
   syncActive = syncEnabled;
   unsigned long lastSync = 0;
+  syncW = (action == strafeRight) ? SYNC_W_RIGHT : (action == strafeLeft ? SYNC_W_LEFT : SYNC_W_ONE);
+
+  encReset();
+  long target = gTargetPulses;
+  bool encMode = (target > 0);
+  gUsedEnc = encMode;
 
   currentAction = action;
   action();
@@ -529,15 +773,31 @@ RunResult runTimed(
 
     // 1) 이동 중 stop 확인
     if (pollStopDuringMove()) {
+      ranMs = encMode ? pulsesToMs(encAvg()) : millis() - start;
       currentAction = nullptr;   // 급정지: 감속 없이 바로 브레이크
       stopMotor();
-      ranMs = millis() - start;
       delay(100);
       return RUN_STOPPED;
     }
 
-    // 1.5) 엔코더로 4바퀴 속도 맞추기
     unsigned long el = millis() - start;
+
+    // 1.2) 엔코더 거리 도달 확인
+    if (encMode) {
+      long avg = encAvg();
+      if (el > 500 && avg < 20) {
+        // 엔코더가 하나도 안 들어옴 -> 이번 이동은 시간 방식으로
+        encMode = false;
+        gUsedEnc = false;
+        ms = (unsigned long)((float)target / gPulsesPerCell * (float)gRunMs);
+        Serial.println();
+        Serial.println("ENCDIST FALLBACK (엔코더 신호 없음 -> 시간 방식)");
+      } else if (avg >= target - gStopEarly) {
+        break;
+      }
+    }
+
+    // 1.5) 엔코더로 4바퀴 속도 맞추기
     if (syncActive && el >= SYNC_START_MS && millis() - lastSync >= SYNC_MS) {
       lastSync = millis();
 
@@ -558,9 +818,11 @@ RunResult runTimed(
         Serial.println("SYNC OFF (엔코더 하나가 안 들어옴 -> 이번 이동은 보정 없이)");
         currentAction();
       } else {
-        float mean = sum / 4.0f;
+        float nsum = 0;
+        for (int i = 0; i < 4; i++) nsum += (float)c[i] / syncW[i];
+        float nmean = nsum / 4.0f;
         for (int i = 0; i < 4; i++) {
-          int a = (int)(SYNC_KP * (mean - (float)c[i]));
+          int a = (int)(SYNC_KP * (nmean * syncW[i] - (float)c[i]));
           if (a >  SYNC_MAX_ADJ) a =  SYNC_MAX_ADJ;
           if (a < -SYNC_MAX_ADJ) a = -SYNC_MAX_ADJ;
           syncAdj[i] = a;
@@ -592,9 +854,9 @@ RunResult runTimed(
       }
 
       if (hits >= CONFIRM_COUNT) {
+        ranMs = encMode ? pulsesToMs(encAvg()) : millis() - start;
         currentAction = nullptr;   // 급정지: 감속 없이 바로 브레이크
         stopMotor();
-        ranMs = millis() - start;
         stopDist = d;
         delay(100);
         return RUN_OBSTACLE;
@@ -602,10 +864,29 @@ RunResult runTimed(
     }
   }
 
+  bool timedOut = encMode && (millis() - start >= ms);
   stopMotor();
-  ranMs = ms;
-
   delay(100);   // 멈춘 뒤 관성 정리
+
+  if (encMode) {
+    long got = encAvg();
+    if (PRINT_ENCODER) {
+      Serial.println();
+      Serial.print("ENCAVG target ");
+      Serial.print(target);
+      Serial.print(" got ");
+      Serial.print(got);
+      Serial.print(" over ");
+      Serial.println(got - target);
+    }
+    if (timedOut) {
+      Serial.println();
+      Serial.println("ENCDIST TIMEOUT (목표 펄스 못 채움 - 바퀴 막힘/엔코더 확인)");
+    }
+    ranMs = (unsigned long)((float)target / gPulsesPerCell * (float)gRunMs);
+  } else {
+    ranMs = ms;
+  }
   return RUN_DONE;
 }
 
