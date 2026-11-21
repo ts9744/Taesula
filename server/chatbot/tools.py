@@ -52,6 +52,7 @@ ROBOT_STATE_LABEL = {
     "idle": "대기",
     "moving": "이동 중",
     "obstacle_detected": "장애물 감지로 멈춤",
+    "person_waiting": "앞에 사람이 있어 비키길 기다리는 중",
 }
 MISSION_LABEL = {
     "deliver": "물품 배송 중",

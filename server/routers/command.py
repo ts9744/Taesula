@@ -44,6 +44,16 @@ def _next_command():
     home.maybe_auto_return()
     home.maybe_start_queued()      # 대기열 물품: 복귀까지 끝나면 시작점에서 출발
 
+    # 사람이 비키길 기다리는 중: 브리지는 'path is empty' 를 받으면 잠시 쉬었다 다시 묻는다
+    if obstacle.person_wait_hold():
+        return {
+            "direction": "stop",
+            "steps": 0,
+            "message": "path is empty",
+            "waiting": "person",
+            "remaining_path": state.current_path,
+        }
+
     if not state.current_path:
         state.current_command = "stop"
         state.current_steps = 0
