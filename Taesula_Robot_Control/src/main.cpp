@@ -1,4 +1,21 @@
 #include <Arduino.h>
+#include <esp_system.h>
+
+// 리셋 원인 이름 (setup 에서 READY 앞에 출력)
+const char* resetReasonName(esp_reset_reason_t r) {
+  switch (r) {
+    case ESP_RST_POWERON:   return "POWERON";    // 전원 켬 / EN 핀 / 시리얼 포트 열기(DTR/RTS)
+    case ESP_RST_EXT:       return "EXT";
+    case ESP_RST_SW:        return "SW";         // ESP.restart()
+    case ESP_RST_PANIC:     return "PANIC";      // 펌웨어 오류로 죽음 (Guru Meditation)
+    case ESP_RST_INT_WDT:   return "INT_WDT";    // 인터럽트 워치독
+    case ESP_RST_TASK_WDT:  return "TASK_WDT";   // loop 가 너무 오래 멈춤
+    case ESP_RST_WDT:       return "WDT";
+    case ESP_RST_DEEPSLEEP: return "DEEPSLEEP";
+    case ESP_RST_BROWNOUT:  return "BROWNOUT";   // 전압 부족
+    default:                return "UNKNOWN";
+  }
+}
 
 // =====================================================================
 // Taesula ESP32 - 초음파 4방향 + 이동 중 stop + 엔코더 측정 (2026-11-15)
@@ -118,7 +135,7 @@ const unsigned long STRAFE_OVERSHOOT_MS  = 0;
 // ===============================
 bool USE_ENC_DIST = true;                 // encdist on/off 로 바꿀 수 있음
 const float CELL_CM = 34.0;
-const float PULSES_PER_CM_FWD    = 32.5;  // 2026-11-19 실측: forward 2 -> 4014펄스 / 123.5cm (2층 짐 올린 상태)
+const float PULSES_PER_CM_FWD    = 31.2;  // 2026-11-19 실측: forward 2 -> 4014펄스 / 123.5cm (2층 짐 올린 상태)
 const float PULSES_PER_CM_STRAFE = 32.3;  // 2026-11-19 실측: right 2 -> 약 3989펄스 / 평균 123.5cm
 const long  STOP_EARLY_PULSES_FWD    = 410; // 2026-11-19 실측: 멈출 때 약 410펄스(12.6cm) 더 감
 const long  STOP_EARLY_PULSES_STRAFE = 265; // 2026-11-19: right 69~69.5 / left 70cm -> 1.5cm 줄임
@@ -136,9 +153,9 @@ bool  gUsedEnc = false;       // 이번 이동이 실제로 엔코더 방식으�
 //   보정: rotate 360 -> 실제로 돈 각도 A 측정 -> 새 값 = 지금 값 x 360 / A
 //         작은 각도(rotate 5)가 덜 돌면 ROTATE_STOP_EARLY 를 줄이고, 더 돌면 늘리기
 // ===============================
-const float ROTATE_PULSES_PER_DEG = 16.0;   // 추정값, 실측 필요
+const float ROTATE_PULSES_PER_DEG = 8.54;   // 2026-11-21: rotate 90(target 709)->90도, rotate 15(target 26)->10도 두 점으로 맞춤
 const int   ROTATE_SPEED = 200;             // 너무 낮으면 작은 각도에서 안 움직임
-const long  ROTATE_STOP_EARLY = 0;          // 브레이크로 더 도는 펄스
+const long  ROTATE_STOP_EARLY = 59;         // 최소 회전 약 7도 x 8.54
 const int   ROTATE_MAX_DEG = 180;
 
 // [팀원 3035c71 반영] 출발 전 장애물 점검
@@ -258,8 +275,8 @@ bool SYNC_DURING_RAMP = true;
 //   sync 는 4바퀴 펄스를 똑같이 맞추는데, 좌우 이동은 롤러가 미끄러져서 펄스가 같아도 비스듬히 감
 //   right 가 위(앞)로 뜨면 FL, RR 값을 0.05 씩 낮추기 / 아래(뒤)로 처지면 올리기
 //   left  가 아래(뒤)로 처지면 FL, RR 값을 0.05 씩 낮추기 / 위(앞)로 뜨면 올리기
-float SYNC_W_RIGHT[4] = {0.90, 1.00, 1.00, 0.90};   // 2026-11-19: right 2 를 3번 해서 평균 3cm 아래로 처져서 0.85 -> 0.90
-float SYNC_W_LEFT[4]  = {0.95, 1.00, 1.00, 0.95};   // 2026-11-19: 0.90 에서 3번 평균 3.6cm 위로 -> 0.95
+float SYNC_W_RIGHT[4] = {0.95, 1.00, 1.00, 0.95};   // 2026-11-19: right 2 를 3번 해서 평균 3cm 아래로 처져서 0.85 -> 0.90
+float SYNC_W_LEFT[4]  = {0.98, 1.00, 1.00, 0.98};   // 2026-11-21: left 2 에서 3cm 위로 떠서 0.90 -> 0.95
 const float SYNC_W_ONE[4] = {1.00, 1.00, 1.00, 1.00};
 const float* syncW = SYNC_W_ONE;            // 바퀴별 보정값 FL, FR, RL, RR
 bool syncActive = false;
@@ -360,7 +377,12 @@ unsigned long pulsesToMs(long pulses) {
 // ===============================
 void setup() {
   Serial.begin(115200);
-
+  esp_reset_reason_t rr = esp_reset_reason();
+  Serial.println();
+  Serial.print("RESET ");
+  Serial.print((int)rr);
+  Serial.print(' ');
+  Serial.println(resetReasonName(rr));
   pinMode(LED_PIN, OUTPUT);
 
   for (int i = 0; i < SONAR_COUNT; i++) {
