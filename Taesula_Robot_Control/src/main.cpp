@@ -159,9 +159,9 @@ const int STRAFE_SPEED = 255;
 
 // 바퀴별 속도 보정 (1.00 = 그대로, 0.95 = 5% 느리게)
 const float FL_TRIM = 0.91;   // 2026-11-15: 엔코더 측정으로 RL(가장 느림)에 맞춤
-const float FR_TRIM = 0.75;   // 2026-11-15 새 드라이버 후 미세조정
+const float FR_TRIM = 0.74;   // 2026-11-21: forward 1 에서 왼쪽으로 2cm 휨 (왼쪽 펄스 1.1% 적음) -> 오른쪽 0.01 낮춤
 const float RL_TRIM = 1.00;
-const float RR_TRIM = 0.73;
+const float RR_TRIM = 0.72;   // 2026-11-21: FR 과 같이 0.01 낮춤
 
 // ===============================
 // 좌우 이동(left/right) 전용 보정 - 직진 값과 따로
@@ -185,6 +185,31 @@ const float LFL_TRIM = 0.78;
 const float LFR_TRIM = 0.78;
 const float LRL_TRIM = 1.00;
 const float LRR_TRIM = 0.80;
+
+// ===============================
+// [2026-11-21] 후진(backward) 전용 보정 - 전진 FL_TRIM~RR_TRIM 과 따로
+//   같은 TRIM 으로 전진은 ENC% 95~100 인데 후진은 FR/RR 이 91~92 (모터 역회전 효율 차이) -> 후진 때 휨
+//   초기값: 2026-11-21 backward 1 x3 의 SUGGEST 평균
+//   debug on -> backward 1 하면 SUGGEST(back) 로 다음 값을 알려 줌
+//   눈으로 맞출 때 (휘는 쪽 = 덜 도는 쪽):
+//     후진하며 오른쪽으로 휘면 -> BFL, BRL 을 0.02~0.03 씩 낮추기
+//     후진하며 왼쪽으로 휘면   -> BFR, BRR 을 0.02~0.03 씩 낮추기
+// ===============================
+const float BFL_TRIM = 0.84;
+const float BFR_TRIM = 0.75;
+const float BRL_TRIM = 0.94;
+const float BRR_TRIM = 0.73;
+
+// ===============================
+// [2026-11-21] 이동 한 번에 얼마나 돌았는지 엔코더로 어림 (debug on 일 때 TURN 줄 출력)
+//   전진/후진: 왼쪽(FL+RL) - 오른쪽(FR+RR) 평균 펄스 차이 / 좌우 바퀴 간격
+//   좌우 이동: 앞(FL+FR) - 뒤(RL+RR) 평균 펄스 차이 / 앞뒤 바퀴 간격
+//   brake = 감속 시작 순간(sync 가 돌던 구간), end = 완전히 선 뒤(감속·관성 포함)
+//   -> brake 는 작은데 end 가 크면 감속/관성 구간에서 틀어지는 것
+//   바퀴 간격을 0 으로 두면 각도는 안 찍고 cm 차이만 찍음 (바퀴 중심 사이를 자로 재서 넣기)
+// ===============================
+const float TRACK_CM     = 0;   // 왼쪽 바퀴 중심 ~ 오른쪽 바퀴 중심
+const float WHEELBASE_CM = 0;   // 앞 바퀴 중심 ~ 뒤 바퀴 중심
 
 // ===============================
 // 이동 중 장애물 감지
@@ -225,6 +250,9 @@ const unsigned long SYNC_START_MS = 150;   // 출발 직후는 보정 안 함 (�
 const float SYNC_KP     = 1.0;             // 펄스 1개 차이당 PWM 몇 만큼 보정
 const int   SYNC_MAX_ADJ = 60;             // 보정 최대치 (PWM)
 int  syncAdj[4] = {0, 0, 0, 0};
+// [2026-11-21] 감속(RAMP_MS) 중에도 sync 계속 (예전엔 감속 시작 때 보정값이 고정돼서 마지막에 조금씩 돌았음)
+//   debug on 의 TURN 줄에서 end - brake 차이가 줄어드는지 보고, 이상하면 false 로 되돌리기
+bool SYNC_DURING_RAMP = true;
 
 // [2026-11-19] 좌우 이동 때 바퀴별 목표 비율 (sync 가 이 비율로 맞춤) 순서: FL, FR, RL, RR
 //   sync 는 4바퀴 펄스를 똑같이 맞추는데, 좌우 이동은 롤러가 미끄러져서 펄스가 같아도 비스듬히 감
@@ -265,7 +293,9 @@ float readDistanceCm(int sensor, unsigned long timeoutUs);
 void printAllDistances();
 
 void encReset();
-void printEncoder(int mode);   // 0 = 전진/후진, 1 = right, 2 = left
+void printEncoder(int mode);   // 0 = 전진, 1 = right, 2 = left, 3 = 후진
+void printTurn(const unsigned long *atBrake, bool strafe);
+void syncCompute();
 long encAvg();
 void rotateInPlace(int deg);
 
@@ -702,7 +732,7 @@ void handleLine(String line) {
   RunResult r = runTimed(action, totalMs, sensor, ranMs, stopDist);
 
   if (PRINT_ENCODER) {
-    printEncoder(dir == "right" ? 1 : (dir == "left" ? 2 : 0));
+    printEncoder(dir == "right" ? 1 : (dir == "left" ? 2 : (dir == "backward" ? 3 : 0)));
   }
 
   unsigned long cellsDone = ranMs / runMs;
@@ -849,15 +879,7 @@ RunResult runTimed(
         Serial.println("SYNC OFF (엔코더 하나가 안 들어옴 -> 이번 이동은 보정 없이)");
         currentAction();
       } else {
-        float nsum = 0;
-        for (int i = 0; i < 4; i++) nsum += (float)c[i] / syncW[i];
-        float nmean = nsum / 4.0f;
-        for (int i = 0; i < 4; i++) {
-          int a = (int)(SYNC_KP * (nmean * syncW[i] - (float)c[i]));
-          if (a >  SYNC_MAX_ADJ) a =  SYNC_MAX_ADJ;
-          if (a < -SYNC_MAX_ADJ) a = -SYNC_MAX_ADJ;
-          syncAdj[i] = a;
-        }
+        syncCompute();
         currentAction();   // 보정값 반영해서 PWM 다시 걸기
       }
     }
@@ -896,8 +918,11 @@ RunResult runTimed(
   }
 
   bool timedOut = encMode && (millis() - start >= ms);
+  unsigned long atBrake[ENC_COUNT];
+  for (int i = 0; i < ENC_COUNT; i++) atBrake[i] = encCount[i];
   stopMotor();
   delay(100);   // 멈춘 뒤 관성 정리
+  if (PRINT_ENCODER) printTurn(atBrake, action == strafeLeft || action == strafeRight);
 
   if (encMode) {
     long got = encAvg();
@@ -1029,6 +1054,7 @@ void stopMotor() {
     ramped = true;
     for (int k = RAMP_STEPS - 1; k >= 1; k--) {
       speedScale = (float)k / RAMP_STEPS;
+      if (syncActive && SYNC_DURING_RAMP) syncCompute();   // 감속 중에도 4바퀴 펄스를 계속 맞춘다
       currentAction();
       delay(RAMP_MS / RAMP_STEPS);
     }
@@ -1068,10 +1094,10 @@ void moveForward() {
 
 void moveBackward() {
   digitalWrite(LED_PIN, HIGH);
-  driveMotor(FL_IN1, FL_IN2, false, FL_INV, trimmed(MOTOR_SPEED, FL_TRIM));
-  driveMotor(FR_IN1, FR_IN2, false, FR_INV, trimmed(MOTOR_SPEED, FR_TRIM));
-  driveMotor(RL_IN1, RL_IN2, false, RL_INV, trimmed(MOTOR_SPEED, RL_TRIM));
-  driveMotor(RR_IN1, RR_IN2, false, RR_INV, trimmed(MOTOR_SPEED, RR_TRIM));
+  driveMotor(FL_IN1, FL_IN2, false, FL_INV, trimmed(MOTOR_SPEED, BFL_TRIM));
+  driveMotor(FR_IN1, FR_IN2, false, FR_INV, trimmed(MOTOR_SPEED, BFR_TRIM));
+  driveMotor(RL_IN1, RL_IN2, false, RL_INV, trimmed(MOTOR_SPEED, BRL_TRIM));
+  driveMotor(RR_IN1, RR_IN2, false, RR_INV, trimmed(MOTOR_SPEED, BRR_TRIM));
 }
 
 
@@ -1149,14 +1175,14 @@ void encReset() {
 
 // 바퀴별 펄스 + 가장 많이 돈 바퀴 대비 % + 추천 TRIM
 void printEncoder(int mode) {
-  bool strafe = (mode != 0);
   unsigned long c[ENC_COUNT];
   for (int i = 0; i < ENC_COUNT; i++) c[i] = encCount[i];
 
   const float fwdTrims[ENC_COUNT]    = {FL_TRIM, FR_TRIM, RL_TRIM, RR_TRIM};
   const float strafeTrims[ENC_COUNT] = {SFL_TRIM, SFR_TRIM, SRL_TRIM, SRR_TRIM};
   const float leftTrims[ENC_COUNT]   = {LFL_TRIM, LFR_TRIM, LRL_TRIM, LRR_TRIM};
-  const float* trims = (mode == 1) ? strafeTrims : (mode == 2 ? leftTrims : fwdTrims);
+  const float backTrims[ENC_COUNT]   = {BFL_TRIM, BFR_TRIM, BRL_TRIM, BRR_TRIM};
+  const float* trims = (mode == 1) ? strafeTrims : (mode == 2 ? leftTrims : (mode == 3 ? backTrims : fwdTrims));
 
   unsigned long mx = 0, mn = 0xFFFFFFFFUL;
   for (int i = 0; i < ENC_COUNT; i++) {
@@ -1189,14 +1215,56 @@ void printEncoder(int mode) {
   Serial.println();
 
   // 가장 느린 바퀴에 나머지를 맞춘 TRIM (이번 이동 기준)
-  Serial.print(mode == 1 ? "SUGGEST(right)" : (mode == 2 ? "SUGGEST(left)" : "SUGGEST"));
+  Serial.print(mode == 1 ? "SUGGEST(right)" : (mode == 2 ? "SUGGEST(left)" : (mode == 3 ? "SUGGEST(back)" : "SUGGEST")));
   for (int i = 0; i < ENC_COUNT; i++) {
     Serial.print(' ');
     if (mode == 1) Serial.print('S');
     if (mode == 2) Serial.print('L');
+    if (mode == 3) Serial.print('B');
     Serial.print(WHEEL_NAME[i]);
     Serial.print("_TRIM ");
     Serial.print(trims[i] * (float)mn / (float)c[i], 2);
   }
   Serial.println();
+}
+
+
+// 이동 한 번에 생긴 좌우(또는 앞뒤) 바퀴 펄스 차이 -> cm, 각도 어림
+void printTurn(const unsigned long *atBrake, bool strafe) {
+  unsigned long c[ENC_COUNT];
+  for (int i = 0; i < ENC_COUNT; i++) c[i] = encCount[i];
+  if (c[0] == 0 || c[1] == 0 || c[2] == 0 || c[3] == 0) return;   // 엔코더 빠진 바퀴가 있으면 의미 없음
+  float ppc = strafe ? PULSES_PER_CM_STRAFE : PULSES_PER_CM_FWD;
+  float span = strafe ? WHEELBASE_CM : TRACK_CM;
+  // 전진/후진: 왼쪽(FL 0, RL 2) - 오른쪽(FR 1, RR 3) / 좌우 이동: 앞(FL 0, FR 1) - 뒤(RL 2, RR 3)
+  int a1 = 0, a2 = strafe ? 1 : 2, b1 = strafe ? 2 : 1, b2 = 3;
+  float dBrake = ((float)atBrake[a1] + atBrake[a2] - atBrake[b1] - atBrake[b2]) / 2.0f;
+  float dEnd   = ((float)c[a1] + c[a2] - c[b1] - c[b2]) / 2.0f;
+  Serial.println();
+  Serial.print(strafe ? "TURN F-R" : "TURN L-R");
+  Serial.print(" brake "); Serial.print(dBrake, 0);
+  Serial.print(" end ");   Serial.print(dEnd, 0);
+  Serial.print(" pulses = "); Serial.print(dEnd / ppc, 2); Serial.print(" cm");
+  if (span > 0) {
+    Serial.print(" ~ ");
+    Serial.print(dEnd / ppc / span * 57.2958f, 1);
+    Serial.print(" deg");
+  }
+  Serial.println();
+}
+
+
+// 4바퀴 누적 펄스를 비교해서 바퀴별 PWM 보정값(syncAdj)을 계산한다 (주행 중 + 감속 중 공용)
+void syncCompute() {
+  unsigned long c[4];
+  for (int i = 0; i < 4; i++) c[i] = encCount[i];
+  float nsum = 0;
+  for (int i = 0; i < 4; i++) nsum += (float)c[i] / syncW[i];
+  float nmean = nsum / 4.0f;
+  for (int i = 0; i < 4; i++) {
+    int a = (int)(SYNC_KP * (nmean * syncW[i] - (float)c[i]));
+    if (a >  SYNC_MAX_ADJ) a =  SYNC_MAX_ADJ;
+    if (a < -SYNC_MAX_ADJ) a = -SYNC_MAX_ADJ;
+    syncAdj[i] = a;
+  }
 }
