@@ -135,9 +135,9 @@ const unsigned long STRAFE_OVERSHOOT_MS  = 0;
 // ===============================
 bool USE_ENC_DIST = true;                 // encdist on/off 로 바꿀 수 있음
 const float CELL_CM = 34.0;
-const float PULSES_PER_CM_FWD    = 31.2;  // 2026-11-19 실측: forward 2 -> 4014펄스 / 123.5cm (2층 짐 올린 상태)
+const float PULSES_PER_CM_FWD    = 31.8;  // 2026-11-21 실측: forward 3 -> 3145펄스 / 99cm (backward 3 도 99cm)
 const float PULSES_PER_CM_STRAFE = 32.3;  // 2026-11-19 실측: right 2 -> 약 3989펄스 / 평균 123.5cm
-const long  STOP_EARLY_PULSES_FWD    = 410; // 2026-11-19 실측: 멈출 때 약 410펄스(12.6cm) 더 감
+const long  STOP_EARLY_PULSES_FWD    = 373; // 브레이크 후 관성: 3145 - (3182 - 410) = 373
 const long  STOP_EARLY_PULSES_STRAFE = 265; // 2026-11-19: right 69~69.5 / left 70cm -> 1.5cm 줄임
 
 long  gTargetPulses = 0;      // 0 이면 시간 방식
@@ -212,9 +212,9 @@ const float LRR_TRIM = 0.80;
 //     후진하며 오른쪽으로 휘면 -> BFL, BRL 을 0.02~0.03 씩 낮추기
 //     후진하며 왼쪽으로 휘면   -> BFR, BRR 을 0.02~0.03 씩 낮추기
 // ===============================
-const float BFL_TRIM = 0.84;
+const float BFL_TRIM = 0.82;   // 2026-11-21: backward 3 에서 오른쪽 3cm -> 0.84 에서 0.02 낮춤
 const float BFR_TRIM = 0.75;
-const float BRL_TRIM = 0.94;
+const float BRL_TRIM = 0.92;   // 2026-11-21: 같이 0.02 낮춤
 const float BRR_TRIM = 0.73;
 
 // ===============================
@@ -277,6 +277,10 @@ bool SYNC_DURING_RAMP = true;
 //   left  가 아래(뒤)로 처지면 FL, RR 값을 0.05 씩 낮추기 / 위(앞)로 뜨면 올리기
 float SYNC_W_RIGHT[4] = {0.95, 1.00, 1.00, 0.95};   // 2026-11-19: right 2 를 3번 해서 평균 3cm 아래로 처져서 0.85 -> 0.90
 float SYNC_W_LEFT[4]  = {0.98, 1.00, 1.00, 0.98};   // 2026-11-21: left 2 에서 3cm 위로 떠서 0.90 -> 0.95
+// [2026-11-21] 후진 때 바퀴별 목표 비율 (FL, FR, RL, RR). 엔코더는 같게 돌아도 후진하면 오른쪽으로 휨
+//   (backward 3: ENC% 99~100, TURN 0.6cm 인데 실제로는 오른쪽 5cm + 3도) -> 왼쪽 바퀴를 조금 덜 돌게
+//   더 오른쪽으로 휘면 FL, RL 을 0.01 씩 더 낮추기 / 왼쪽으로 휘면 올리기
+float SYNC_W_BACK[4]  = {0.99, 1.00, 0.99, 1.00};
 const float SYNC_W_ONE[4] = {1.00, 1.00, 1.00, 1.00};
 const float* syncW = SYNC_W_ONE;            // 바퀴별 보정값 FL, FR, RL, RR
 bool syncActive = false;
@@ -842,7 +846,10 @@ RunResult runTimed(
   for (int i = 0; i < 4; i++) syncAdj[i] = 0;
   syncActive = syncEnabled;
   unsigned long lastSync = 0;
-  syncW = (action == strafeRight) ? SYNC_W_RIGHT : (action == strafeLeft ? SYNC_W_LEFT : SYNC_W_ONE);
+  syncW = (action == strafeRight) ? SYNC_W_RIGHT
+        : (action == strafeLeft)  ? SYNC_W_LEFT
+        : (action == moveBackward) ? SYNC_W_BACK
+        : SYNC_W_ONE;
 
   encReset();
   long target = gTargetPulses;
