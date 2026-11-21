@@ -1,50 +1,5 @@
 #include <Arduino.h>
 
-<<<<<<< HEAD
-// 테스트용 LED
-const int LED_PIN = 2;
-
-// 초음파 센서 - 현재 1개 테스트용
-const int TRIG_PIN = 5;
-const int ECHO_PIN = 18;
-
-// ===============================
-// ZK-BM1 #1 : 앞바퀴
-// ===============================
-const int FL_IN1 = 25;
-const int FL_IN2 = 26;
-
-const int FR_IN1 = 32;
-const int FR_IN2 = 33;
-
-// ===============================
-// ZK-BM1 #2 : 뒷바퀴
-// ===============================
-const int RL_IN1 = 16;
-const int RL_IN2 = 17;
-
-const int RR_IN1 = 22;
-const int RR_IN2 = 23;
-
-// ===============================
-// 이동 설정
-// ===============================
-
-// 1칸 이동 시간
-const unsigned long FORWARD_RUN_MS = 1000;
-const unsigned long STRAFE_RUN_MS  = 1000;
-
-// 칸 출발 전 장애물 점검 (칸 34cm 기준: 다음 칸 장애물 6.5~34cm / 지도 벽 40.5cm -> 37cm)
-const long BLOCK_DISTANCE_CM = 37;
-const int PRECHECK_SAMPLES = 3;
-
-// PWM 속도
-const int MOTOR_SPEED  = 150;
-const int STRAFE_SPEED = 200;
-
-String lineBuf;
-
-=======
 // =====================================================================
 // Taesula ESP32 - 초음파 4방향 + 이동 중 stop + 엔코더 측정 (2026-11-15)
 //
@@ -166,7 +121,7 @@ const float CELL_CM = 34.0;
 const float PULSES_PER_CM_FWD    = 32.5;  // 2026-11-19 실측: forward 2 -> 4014펄스 / 123.5cm (2층 짐 올린 상태)
 const float PULSES_PER_CM_STRAFE = 32.3;  // 2026-11-19 실측: right 2 -> 약 3989펄스 / 평균 123.5cm
 const long  STOP_EARLY_PULSES_FWD    = 410; // 2026-11-19 실측: 멈출 때 약 410펄스(12.6cm) 더 감
-const long  STOP_EARLY_PULSES_STRAFE = 265; // 2026-11-19 실측: right 2 = 63cm -> 68cm 되게 조정
+const long  STOP_EARLY_PULSES_STRAFE = 265; // 2026-11-19: right 69~69.5 / left 70cm -> 1.5cm 줄임
 
 long  gTargetPulses = 0;      // 0 이면 시간 방식
 long  gStopEarly = 0;
@@ -185,6 +140,12 @@ const float ROTATE_PULSES_PER_DEG = 16.0;   // 추정값, 실측 필요
 const int   ROTATE_SPEED = 200;             // 너무 낮으면 작은 각도에서 안 움직임
 const long  ROTATE_STOP_EARLY = 0;          // 브레이크로 더 도는 펄스
 const int   ROTATE_MAX_DEG = 180;
+
+// [팀원 3035c71 반영] 출발 전 장애물 점검
+//   가는 방향 센서로 3번 재서 가운데 값이 BLOCK_DISTANCE_CM 이하면 출발하지 않고
+//   OBSTACLE <방향> 0 0 <거리> 로 보고 (칸 34cm 기준: 다음 칸 장애물 -> 37cm)
+const long BLOCK_DISTANCE_CM = 37;
+const int  PRECHECK_SAMPLES = 3;
 
 // [2026-11-19] 장애물로 멈춘 뒤 칸 중앙으로 복귀
 //   이번 칸에서 움직인 ms 만큼 반대 방향으로 이동 -> 칸 중앙에서 OBSTACLE 출력
@@ -269,8 +230,8 @@ int  syncAdj[4] = {0, 0, 0, 0};
 //   sync 는 4바퀴 펄스를 똑같이 맞추는데, 좌우 이동은 롤러가 미끄러져서 펄스가 같아도 비스듬히 감
 //   right 가 위(앞)로 뜨면 FL, RR 값을 0.05 씩 낮추기 / 아래(뒤)로 처지면 올리기
 //   left  가 아래(뒤)로 처지면 FL, RR 값을 0.05 씩 낮추기 / 위(앞)로 뜨면 올리기
-float SYNC_W_RIGHT[4] = {0.90, 1.00, 1.00, 0.90};
-float SYNC_W_LEFT[4]  = {0.95, 1.00, 1.00, 0.95};   // 2026-11-19: left 2 에서 4cm 위로 떠서 0.85 -> 0.90
+float SYNC_W_RIGHT[4] = {0.90, 1.00, 1.00, 0.90};   // 2026-11-19: right 2 를 3번 해서 평균 3cm 아래로 처져서 0.85 -> 0.90
+float SYNC_W_LEFT[4]  = {0.95, 1.00, 1.00, 0.95};   // 2026-11-19: 0.90 에서 3번 평균 3.6cm 위로 -> 0.95
 const float SYNC_W_ONE[4] = {1.00, 1.00, 1.00, 1.00};
 const float* syncW = SYNC_W_ONE;            // 바퀴별 보정값 FL, FR, RL, RR
 bool syncActive = false;
@@ -281,16 +242,12 @@ String pendingLine;   // 이동 중에 들어온 stop 외 명령 (이동 끝나�
 
 enum RunResult { RUN_DONE, RUN_OBSTACLE, RUN_STOPPED };
 
->>>>>>> d275c60 (ESP32: 엔코더 거리 이동 실측값, 좌우 sync 비율, 장애물 후 칸 중앙 복귀, rotate/nudge)
 
 // ===============================
 // 함수 선언
 // ===============================
 void driveMotor(int in1, int in2, bool forward, bool inverted, int speed);
-<<<<<<< HEAD
-=======
 int trimmed(int base, float trim);
->>>>>>> d275c60 (ESP32: 엔코더 거리 이동 실측값, 좌우 sync 비율, 장애물 후 칸 중앙 복귀, rotate/nudge)
 void stopMotorPair(int in1, int in2);
 void stopMotor();
 
@@ -299,15 +256,6 @@ void moveBackward();
 void strafeLeft();
 void strafeRight();
 
-<<<<<<< HEAD
-void runTimed(void (*action)(), unsigned long ms);
-void handleLine(String line);
-
-long getDistanceCm();
-long precheckDistanceCm();
-
-
-=======
 RunResult runTimed(void (*action)(), unsigned long ms, int sensor,
                    unsigned long &ranMs, float &stopDist);
 bool pollStopDuringMove();
@@ -377,7 +325,6 @@ unsigned long pulsesToMs(long pulses) {
 }
 
 
->>>>>>> d275c60 (ESP32: 엔코더 거리 이동 실측값, 좌우 sync 비율, 장애물 후 칸 중앙 복귀, rotate/nudge)
 // ===============================
 // SETUP
 // ===============================
@@ -403,16 +350,10 @@ void setup() {
 
   pinMode(FL_IN1, OUTPUT);
   pinMode(FL_IN2, OUTPUT);
-
   pinMode(FR_IN1, OUTPUT);
   pinMode(FR_IN2, OUTPUT);
-<<<<<<< HEAD
-
-=======
->>>>>>> d275c60 (ESP32: 엔코더 거리 이동 실측값, 좌우 sync 비율, 장애물 후 칸 중앙 복귀, rotate/nudge)
   pinMode(RL_IN1, OUTPUT);
   pinMode(RL_IN2, OUTPUT);
-
   pinMode(RR_IN1, OUTPUT);
   pinMode(RR_IN2, OUTPUT);
 
@@ -420,11 +361,7 @@ void setup() {
 
   delay(300);
 
-<<<<<<< HEAD
-  Serial.println("READY");
-=======
   Serial.println("READY (sonar4 + encoder + sync + encdist + rotate + nudge, sonar ON)");
->>>>>>> d275c60 (ESP32: 엔코더 거리 이동 실측값, 좌우 sync 비율, 장애물 후 칸 중앙 복귀, rotate/nudge)
 }
 
 
@@ -432,27 +369,6 @@ void setup() {
 // LOOP
 // ===============================
 void loop() {
-<<<<<<< HEAD
-  while (Serial.available() > 0) {
-
-    char c = Serial.read();
-
-    if (c == '\n') {
-
-      lineBuf.trim();
-
-      if (lineBuf.length() > 0) {
-        handleLine(lineBuf);
-      }
-
-      lineBuf = "";
-    }
-
-    else if (c != '\r') {
-
-      lineBuf += c;
-
-=======
   // 이동 중에 들어왔던 명령이 있으면 먼저 처리
   if (pendingLine.length() > 0) {
     String l = pendingLine;
@@ -474,7 +390,6 @@ void loop() {
     }
     else if (c != '\r') {
       lineBuf += c;
->>>>>>> d275c60 (ESP32: 엔코더 거리 이동 실측값, 좌우 sync 비율, 장애물 후 칸 중앙 복귀, rotate/nudge)
       if (lineBuf.length() > 64) {
         lineBuf = "";
       }
@@ -486,41 +401,17 @@ void loop() {
 // ===============================
 // 명령 처리
 //
-<<<<<<< HEAD
-// 예:
-// FORWARD 3
-// BACKWARD 1
-// LEFT 2
-// RIGHT 1
-// STOP
-// DIST
-=======
 // forward 3 / backward 1 / left 2 / right 1   (라즈베리파이가 보내는 명령)
 // stop
 // dist            4방향 거리 한 번
 // scan            4방향 거리 0.2초마다 20번 (stop 으로 중단)
 // sonar on / off  이동 중 감지 켜기/끄기
 // fl / fr / rl / rr   바퀴 하나만 1초 전진 테스트
->>>>>>> d275c60 (ESP32: 엔코더 거리 이동 실측값, 좌우 sync 비율, 장애물 후 칸 중앙 복귀, rotate/nudge)
 // ===============================
 void handleLine(String line) {
 
   int sp = line.indexOf(' ');
 
-<<<<<<< HEAD
-  String dir =
-      (sp == -1)
-      ? line
-      : line.substring(0, sp);
-
-  int steps =
-      (sp == -1)
-      ? 1
-      : line.substring(sp + 1).toInt();
-
-  // FORWARD / forward 둘 다 처리
-  dir.toLowerCase();
-=======
   String dir = (sp == -1) ? line : line.substring(0, sp);
   String arg = (sp == -1) ? "" : line.substring(sp + 1);
   arg.trim();
@@ -529,99 +420,12 @@ void handleLine(String line) {
   arg.toLowerCase();
 
   int steps = (arg.length() == 0) ? 1 : arg.toInt();
->>>>>>> d275c60 (ESP32: 엔코더 거리 이동 실측값, 좌우 sync 비율, 장애물 후 칸 중앙 복귀, rotate/nudge)
 
 
   // -------------------------------
   // 정지
   // -------------------------------
   if (dir == "stop") {
-<<<<<<< HEAD
-
-    stopMotor();
-
-    Serial.println("DONE stop 0");
-
-    return;
-  }
-
-
-  // -------------------------------
-  // 초음파 거리
-  // -------------------------------
-  if (dir == "dist") {
-
-    Serial.print("DIST ");
-    Serial.println(getDistanceCm());
-
-    return;
-  }
-
-
-  if (steps < 1) {
-    steps = 1;
-  }
-
-
-  void (*action)() = nullptr;
-  unsigned long runMs = 0;
-
-
-  if (dir == "forward") {
-
-    action = moveForward;
-    runMs = FORWARD_RUN_MS;
-  }
-
-  else if (dir == "backward") {
-
-    action = moveBackward;
-    runMs = FORWARD_RUN_MS;
-  }
-
-  else if (dir == "left") {
-
-    action = strafeLeft;
-    runMs = STRAFE_RUN_MS;
-  }
-
-  else if (dir == "right") {
-
-    action = strafeRight;
-    runMs = STRAFE_RUN_MS;
-  }
-
-  else {
-
-    Serial.println("ERR unknown " + line);
-
-    return;
-  }
-
-
-  // -------------------------------
-  // steps 만큼 반복
-  // -------------------------------
-  for (int i = 0; i < steps; i++) {
-    // 칸 출발 전 점검: 앞쪽에 장애물이 있으면 출발하지 않고 보고한다
-    if (dir == "forward") {
-      long pd = precheckDistanceCm();
-      if (pd > 0 && pd <= BLOCK_DISTANCE_CM) {
-        Serial.println();
-        Serial.print("OBSTACLE ");
-        Serial.print(dir);
-        Serial.print(' ');
-        Serial.print(i);
-        Serial.print(" 0 ");
-        Serial.println(pd);
-        return;
-      }
-    }
-    runTimed(action, runMs);
-  }
-
-
-=======
     stopMotor();
     Serial.println("DONE stop 0");
     return;
@@ -854,6 +658,31 @@ void handleLine(String line) {
   float stopDist = -1;
 
   encReset();
+  // 출발 전 점검: 가는 방향 바로 다음 칸에 장애물이 있으면 움직이지 않고 보고
+  if (sensor >= 0) {
+    float v[PRECHECK_SAMPLES];
+    int n = 0;
+    for (int k = 0; k < PRECHECK_SAMPLES; k++) {
+      float d = readDistanceCm(sensor, DIST_TIMEOUT_US);
+      if (d > 0) v[n++] = d;
+      delay(30);
+    }
+    if (n > 0) {
+      for (int a = 0; a < n - 1; a++)
+        for (int b = a + 1; b < n; b++)
+          if (v[b] < v[a]) { float t = v[a]; v[a] = v[b]; v[b] = t; }
+      float pd = v[n / 2];
+      if (pd <= BLOCK_DISTANCE_CM) {
+        Serial.println();
+        Serial.print("OBSTACLE ");
+        Serial.print(dir);
+        Serial.print(" 0 0 ");
+        Serial.println(pd, 1);
+        return;
+      }
+    }
+  }
+
   bool strafeMove = (dir == "left" || dir == "right");
   unsigned long totalMs = runMs * steps;
 
@@ -933,7 +762,6 @@ void handleLine(String line) {
   }
 
   Serial.println();
->>>>>>> d275c60 (ESP32: 엔코더 거리 이동 실측값, 좌우 sync 비율, 장애물 후 칸 중앙 복귀, rotate/nudge)
   Serial.print("DONE ");
   Serial.print(dir);
   Serial.print(' ');
@@ -942,23 +770,6 @@ void handleLine(String line) {
 
 
 // ===============================
-<<<<<<< HEAD
-// 지정 시간만큼 동작 후 정지
-// ===============================
-void runTimed(
-    void (*action)(),
-    unsigned long ms
-) {
-
-  action();
-
-  delay(ms);
-
-  stopMotor();
-
-  // 칸 사이 짧게 정지
-  delay(100);
-=======
 // 지정 시간만큼 이동
 // - 기다리는 동안 (1) 시리얼에 stop 이 왔는지, (2) 고른 센서 거리 를 계속 확인
 // - sensor = -1 이면 거리 확인 안 함
@@ -1154,32 +965,11 @@ int trimmed(int base, float trim) {
   if (v > 255) v = 255;
   if (v < 0) v = 0;
   return v;
->>>>>>> d275c60 (ESP32: 엔코더 거리 이동 실측값, 좌우 sync 비율, 장애물 후 칸 중앙 복귀, rotate/nudge)
 }
 
 
 // ===============================
 // 개별 모터 제어
-<<<<<<< HEAD
-//
-// inverted = false
-//   forward -> HIGH / LOW
-//
-// inverted = true
-//   forward -> LOW / HIGH
-// ===============================
-void driveMotor(
-    int in1,
-    int in2,
-    bool forward,
-    bool inverted,
-    int speed
-) {
-
-  // 실제 전기 방향 결정
-  bool direction = forward;
-
-=======
 // inverted = false : forward -> PWM / LOW
 // inverted = true  : forward -> LOW / PWM
 // ===============================
@@ -1206,60 +996,31 @@ void driveMotor(int in1, int in2, bool forward, bool inverted, int speed) {
   motorsRunning = true;
 
   bool direction = forward;
->>>>>>> d275c60 (ESP32: 엔코더 거리 이동 실측값, 좌우 sync 비율, 장애물 후 칸 중앙 복귀, rotate/nudge)
   if (inverted) {
     direction = !direction;
   }
 
-<<<<<<< HEAD
-
   if (direction) {
-
-=======
-  if (direction) {
->>>>>>> d275c60 (ESP32: 엔코더 거리 이동 실측값, 좌우 sync 비율, 장애물 후 칸 중앙 복귀, rotate/nudge)
     analogWrite(in1, speed);
     digitalWrite(in2, LOW);
-  }
-
-  else {
-
+  } else {
     digitalWrite(in1, LOW);
     analogWrite(in2, speed);
   }
 }
 
 
-<<<<<<< HEAD
-// ===============================
-// 모터 한 개 정지
-// ===============================
-void stopMotorPair(
-    int in1,
-    int in2
-) {
-
-=======
 void stopMotorPair(int in1, int in2) {
->>>>>>> d275c60 (ESP32: 엔코더 거리 이동 실측값, 좌우 sync 비율, 장애물 후 칸 중앙 복귀, rotate/nudge)
   analogWrite(in1, 0);
   analogWrite(in2, 0);
-
   digitalWrite(in1, LOW);
   digitalWrite(in2, LOW);
 }
 
 
-<<<<<<< HEAD
-// ===============================
-// 전체 정지
-// ===============================
-=======
 // 전체 정지: 달리던 중이면 4바퀴 동시에 짧게 브레이크 -> 전원 끊기
 // (그냥 끊으면 바퀴마다 관성으로 서는 시점이 달라서 마지막에 틀어짐)
->>>>>>> d275c60 (ESP32: 엔코더 거리 이동 실측값, 좌우 sync 비율, 장애물 후 칸 중앙 복귀, rotate/nudge)
 void stopMotor() {
-
   digitalWrite(LED_PIN, LOW);
 
   // 1) 4바퀴 같이 감속 (급정지면 건너뜀)
@@ -1288,92 +1049,6 @@ void stopMotor() {
   stopMotorPair(FR_IN1, FR_IN2);
   stopMotorPair(RL_IN1, RL_IN2);
   stopMotorPair(RR_IN1, RR_IN2);
-<<<<<<< HEAD
-}
-
-
-// ============================================================
-// 실제 테스트 결과
-//
-// FL 전진 = LOW  / HIGH -> inverted = true
-// FR 전진 = LOW  / HIGH -> inverted = true
-// RL 전진 = HIGH / LOW  -> inverted = false
-// RR 전진 = HIGH / LOW  -> inverted = false
-// ============================================================
-
-
-// ===============================
-// 전진
-// ===============================
-void moveForward() {
-
-  digitalWrite(LED_PIN, HIGH);
-
-  driveMotor(
-      FL_IN1, FL_IN2,
-      true,
-      true,
-      MOTOR_SPEED
-  );
-
-  driveMotor(
-      FR_IN1, FR_IN2,
-      true,
-      true,
-      MOTOR_SPEED
-  );
-
-  driveMotor(
-      RL_IN1, RL_IN2,
-      true,
-      false,
-      MOTOR_SPEED
-  );
-
-  driveMotor(
-      RR_IN1, RR_IN2,
-      true,
-      false,
-      MOTOR_SPEED
-  );
-}
-
-
-// ===============================
-// 후진
-// ===============================
-void moveBackward() {
-
-  digitalWrite(LED_PIN, HIGH);
-
-  driveMotor(
-      FL_IN1, FL_IN2,
-      false,
-      true,
-      MOTOR_SPEED
-  );
-
-  driveMotor(
-      FR_IN1, FR_IN2,
-      false,
-      true,
-      MOTOR_SPEED
-  );
-
-  driveMotor(
-      RL_IN1, RL_IN2,
-      false,
-      false,
-      MOTOR_SPEED
-  );
-
-  driveMotor(
-      RR_IN1, RR_IN2,
-      false,
-      false,
-      MOTOR_SPEED
-  );
-=======
 
   motorsRunning = false;
   syncActive = false;
@@ -1397,52 +1072,10 @@ void moveBackward() {
   driveMotor(FR_IN1, FR_IN2, false, FR_INV, trimmed(MOTOR_SPEED, FR_TRIM));
   driveMotor(RL_IN1, RL_IN2, false, RL_INV, trimmed(MOTOR_SPEED, RL_TRIM));
   driveMotor(RR_IN1, RR_IN2, false, RR_INV, trimmed(MOTOR_SPEED, RR_TRIM));
->>>>>>> d275c60 (ESP32: 엔코더 거리 이동 실측값, 좌우 sync 비율, 장애물 후 칸 중앙 복귀, rotate/nudge)
 }
 
 
 // ===============================
-<<<<<<< HEAD
-// 왼쪽 횡이동
-//
-// 물리적 바퀴 방향:
-// FL = 후진
-// FR = 전진
-// RL = 전진
-// RR = 후진
-// ===============================
-void strafeLeft() {
-
-  digitalWrite(LED_PIN, HIGH);
-
-  driveMotor(
-      FL_IN1, FL_IN2,
-      false,
-      true,
-      STRAFE_SPEED
-  );
-
-  driveMotor(
-      FR_IN1, FR_IN2,
-      true,
-      true,
-      STRAFE_SPEED
-  );
-
-  driveMotor(
-      RL_IN1, RL_IN2,
-      true,
-      false,
-      STRAFE_SPEED
-  );
-
-  driveMotor(
-      RR_IN1, RR_IN2,
-      false,
-      false,
-      STRAFE_SPEED
-  );
-=======
 // 왼쪽 횡이동: FL 후진, FR 전진, RL 전진, RR 후진
 // ===============================
 void strafeLeft() {
@@ -1451,52 +1084,10 @@ void strafeLeft() {
   driveMotor(FR_IN1, FR_IN2, true,  FR_INV, trimmed(STRAFE_SPEED, LFR_TRIM));
   driveMotor(RL_IN1, RL_IN2, true,  RL_INV, trimmed(STRAFE_SPEED, LRL_TRIM));
   driveMotor(RR_IN1, RR_IN2, false, RR_INV, trimmed(STRAFE_SPEED, LRR_TRIM));
->>>>>>> d275c60 (ESP32: 엔코더 거리 이동 실측값, 좌우 sync 비율, 장애물 후 칸 중앙 복귀, rotate/nudge)
 }
 
 
 // ===============================
-<<<<<<< HEAD
-// 오른쪽 횡이동
-//
-// 물리적 바퀴 방향:
-// FL = 전진
-// FR = 후진
-// RL = 후진
-// RR = 전진
-// ===============================
-void strafeRight() {
-
-  digitalWrite(LED_PIN, HIGH);
-
-  driveMotor(
-      FL_IN1, FL_IN2,
-      true,
-      true,
-      STRAFE_SPEED
-  );
-
-  driveMotor(
-      FR_IN1, FR_IN2,
-      false,
-      true,
-      STRAFE_SPEED
-  );
-
-  driveMotor(
-      RL_IN1, RL_IN2,
-      false,
-      false,
-      STRAFE_SPEED
-  );
-
-  driveMotor(
-      RR_IN1, RR_IN2,
-      true,
-      false,
-      STRAFE_SPEED
-  );
-=======
 // 오른쪽 횡이동: FL 전진, FR 후진, RL 후진, RR 전진
 // ===============================
 void strafeRight() {
@@ -1505,36 +1096,10 @@ void strafeRight() {
   driveMotor(FR_IN1, FR_IN2, false, FR_INV, trimmed(STRAFE_SPEED, SFR_TRIM));
   driveMotor(RL_IN1, RL_IN2, false, RL_INV, trimmed(STRAFE_SPEED, SRL_TRIM));
   driveMotor(RR_IN1, RR_IN2, true,  RR_INV, trimmed(STRAFE_SPEED, SRR_TRIM));
->>>>>>> d275c60 (ESP32: 엔코더 거리 이동 실측값, 좌우 sync 비율, 장애물 후 칸 중앙 복귀, rotate/nudge)
 }
 
 
 // ===============================
-<<<<<<< HEAD
-// 초음파 센서
-// 현재 1개 테스트용
-// ===============================
-long getDistanceCm() {
-
-  digitalWrite(TRIG_PIN, LOW);
-
-  delayMicroseconds(2);
-
-  digitalWrite(TRIG_PIN, HIGH);
-
-  delayMicroseconds(10);
-
-  digitalWrite(TRIG_PIN, LOW);
-
-
-  long duration =
-      pulseIn(
-          ECHO_PIN,
-          HIGH,
-          30000
-      );
-
-=======
 // 초음파 거리 (cm). 응답이 없으면 -1
 // ===============================
 float readDistanceCm(int sensor, unsigned long timeoutUs) {
@@ -1548,50 +1113,10 @@ float readDistanceCm(int sensor, unsigned long timeoutUs) {
   digitalWrite(trig, LOW);
 
   unsigned long duration = pulseIn(echo, HIGH, timeoutUs);
->>>>>>> d275c60 (ESP32: 엔코더 거리 이동 실측값, 좌우 sync 비율, 장애물 후 칸 중앙 복귀, rotate/nudge)
 
   if (duration == 0) {
     return -1;
   }
-<<<<<<< HEAD
-
-
-  return duration * 0.034 / 2;
-}
-
-// ===============================
-// 칸 출발 전 점검용 거리
-// 3번 재서 유효한 값 중 가운데 값을 돌려준다. 하나도 못 쟀으면 -1.
-// ===============================
-long precheckDistanceCm() {
-  long v[PRECHECK_SAMPLES];
-  int n = 0;
-
-  for (int k = 0; k < PRECHECK_SAMPLES; k++) {
-    long d = getDistanceCm();
-    if (d > 0) {
-      v[n++] = d;
-    }
-    delay(30);
-  }
-
-  if (n == 0) {
-    return -1;
-  }
-
-  // 작은 순서로 정렬
-  for (int a = 0; a < n - 1; a++) {
-    for (int b = a + 1; b < n; b++) {
-      if (v[b] < v[a]) {
-        long t = v[a];
-        v[a] = v[b];
-        v[b] = t;
-      }
-    }
-  }
-
-  return v[n / 2];
-=======
   return duration * 0.0343f / 2.0f;
 }
 
@@ -1674,5 +1199,4 @@ void printEncoder(int mode) {
     Serial.print(trims[i] * (float)mn / (float)c[i], 2);
   }
   Serial.println();
->>>>>>> d275c60 (ESP32: 엔코더 거리 이동 실측값, 좌우 sync 비율, 장애물 후 칸 중앙 복귀, rotate/nudge)
 }
