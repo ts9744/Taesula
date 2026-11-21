@@ -169,6 +169,7 @@ const ROBOT_STATUS = {
   moving: ['이동 중', 'move'],
   stopped: ['정지', 'warn'],
   obstacle_detected: ['장애물 감지', 'warn'],
+  person_waiting: ['사람 대기', 'warn'],
   error: ['오류', 'error'],
   not_initialized: ['초기화 안 됨', 'warn'],
 };

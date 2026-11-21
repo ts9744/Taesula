@@ -30,6 +30,10 @@ tag_last_measure = None   # 마지막으로 '시작점에 놓기'를 한 시각 
 delivery_queue = []     # QR 코드 목록
 next_start_at = None    # 대기열 다음 물품 출발 예약 시각 (시작점에서 싣는 시간)
 
+# 사람 다리 대기 (server/person_detect.py, obstacle.py)
+person_wait_until = None   # 이 시각까지 /next-command 가 대기를 돌려준다
+person_wait_count = 0      # 같은 자리에서 연속으로 사람 때문에 기다린 횟수
+
 # /route 와 /next-command 가 배송 상태를 동시에 바꾸지 않게 한다
 lock = threading.RLock()
 

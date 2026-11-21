@@ -56,7 +56,7 @@ async function findCargo(qr) {
 }
 
 async function onRobotChange(prev, st, s) {
-  if (st === 'moving' && prev !== 'obstacle_detected' && prev !== 'stopped') {
+  if (st === 'moving' && prev !== 'obstacle_detected' && prev !== 'stopped' && prev !== 'person_waiting') {
     // 장애물로 잠깐 멈췄다 다시 가는 것은 새 출발로 치지 않는다
     if (s.mission === 'return') {
       cargo = { returning: true };
@@ -65,12 +65,14 @@ async function onRobotChange(prev, st, s) {
     }
     cargo = await findCargo(s.current_item_qr);
     notify('info', 'SIDA 출발', cargo ? `${cargo.name}을(를) ${cargo.where}(으)로 옮기기 시작했습니다.` : '목적지로 이동을 시작했습니다.');
-  } else if (st === 'idle' && (prev === 'moving' || prev === 'obstacle_detected')) {
+  } else if (st === 'idle' && (prev === 'moving' || prev === 'obstacle_detected' || prev === 'person_waiting')) {
     if (cargo && cargo.returning) notify('ok', 'SIDA 복귀 완료', '시작점에 도착했습니다.');
     else notify('ok', 'SIDA 도착', cargo ? `${cargo.name}을(를) ${cargo.where}에 옮겼습니다.` : '이동을 마치고 대기 중입니다.');
     cargo = null;
   } else if (st === 'obstacle_detected') {
     notify('warn', '장애물 감지', 'SIDA 앞에 장애물이 있습니다. 경로를 확인하세요.');
+  } else if (st === 'person_waiting' && prev !== 'person_waiting') {
+    notify('info', '사람 감지', '앞에 사람이 있어 잠시 기다립니다.');
   } else if (st === 'error') {
     notify('error', 'SIDA 오류', '로봇에서 오류가 발생했습니다.');
   }

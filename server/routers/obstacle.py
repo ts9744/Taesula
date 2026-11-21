@@ -14,7 +14,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from algorithm.astar import a_star
-from server import state
+from server import person_detect, state
 from server.database import get_db, load_grid_from_db
 from server.routers.route import path_to_commands
 from server.replan_logic import (
@@ -95,6 +95,21 @@ def commit_pending_move():
         for i in range(1, steps + 1):             # 실제로 지나간 칸은 비어 있었던 것
             blocked_cells.pop((pos[0] + d[0] * i, pos[1] + d[1] * i), None)
         _save_robot((pos[0] + d[0] * steps, pos[1] + d[1] * steps), "moving")
+        state.person_wait_count = 0               # 무사히 지나갔으면 사람 대기 횟수 초기화
+
+
+def person_wait_hold(now=None):
+    """사람이 비키길 기다리는 중이면 True. 대기가 막 끝났으면 상태를 moving 으로 돌리고 False."""
+    until = getattr(state, "person_wait_until", None)
+    if until is None:
+        return False
+    if (time.time() if now is None else now) < until:
+        return True
+    state.person_wait_until = None
+    pos = _robot_pos()
+    if pos is not None:
+        _save_robot(pos, "moving")
+    return False
 
 
 def mark_dispatched(cmd, steps=1):
@@ -180,6 +195,25 @@ def report_obstacle(r: ObstacleReport):
             for _ in range(steps - k):
                 state.current_path.insert(0, move)
         return {"status": "ignored", "reason": "지도에 있는 장애물/벽", "cell": list(cell)}
+
+    # 사람 다리가 보이면: 칸을 막지 않고 잠시 기다렸다가 같은 이동을 다시 시도한다
+    if (move in person_detect.CAMERA_DIRECTIONS
+            and getattr(state, "person_wait_count", 0) < person_detect.PERSON_MAX_WAITS
+            and person_detect.person_ahead()):
+        state.person_wait_count = getattr(state, "person_wait_count", 0) + 1
+        state.person_wait_until = time.time() + person_detect.PERSON_WAIT_SEC
+        state.current_command = "stop"
+        _save_robot(arrived, "person_waiting")
+        if not r.completed:                       # 못 간 칸은 대기 후 다시 시도
+            for _ in range(steps - k):
+                state.current_path.insert(0, move)
+        return {
+            "status": "waiting_person",
+            "wait_sec": person_detect.PERSON_WAIT_SEC,
+            "wait_count": state.person_wait_count,
+            "max_waits": person_detect.PERSON_MAX_WAITS,
+        }
+    state.person_wait_count = 0
 
     # 지도에 없던 장애물
     state.current_command = "stop"
