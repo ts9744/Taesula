@@ -16,7 +16,7 @@ STEP_SEC = 1.5          # 1칸 이동 + 여유 (FORWARD_RUN_MS = 1000)
 IDLE_POLL_SEC = 1.0
 RECONNECT_SEC = 2.0
 HEARTBEAT_SEC = 2.0
-RAW_TIMEOUT_SEC = 8.0   # nudge(최대 0.6초) / 측정용 1칸 이동
+RAW_TIMEOUT_SEC = 8.0   # nudge(최대 15cm) / rotate(최대 30도) / 측정용 1칸 이동
 
 MSG_NOT_CONNECTED = "ESP32가 연결되어 있지 않습니다. 라즈베리파이 USB에 ESP32를 연결해 주세요."
 

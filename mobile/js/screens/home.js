@@ -303,7 +303,7 @@ function aprilTagSettings() {
     try {
       const s = await api.tagStatus();
       const m = s.last_measure && s.last_measure.cell_move;
-      const rec = m ? Object.entries(m).map(([g, v]) => `${g === 'fb' ? '앞뒤' : '좌우'} 1칸 ${v.avg_cm}cm → 추천 ${v.recommended_ms}ms`).join(' / ') : '';
+      const rec = m ? Object.entries(m).map(([g, v]) => `${g === 'fb' ? '앞뒤' : '좌우'} 1칸 ${v.avg_cm}cm → ${g === 'fb' ? 'PULSES_PER_CM_FWD' : 'PULSES_PER_CM_STRAFE'} 추천 ${v.recommended_pulses_per_cm ?? '-'}`).join(' / ') : '';
       info.textContent = `${s.calibrated ? '기준 등록됨' : '기준 없음 (먼저 기준 등록)'}${s.job ? ` · 진행 중: ${s.job.kind === 'measure' ? '이동 거리 측정' : '자동 보정'}` : ''}${rec ? ` · ${rec}` : ''}`;
     } catch (e) { info.textContent = `상태를 불러오지 못했습니다. ${e.message}`; }
   };
@@ -338,19 +338,20 @@ function aprilTagSettings() {
     } catch (e) { toast(e.message, 'error'); }
   }));
 
-  const fwd = h('input', { class: 'input', type: 'number', inputmode: 'numeric', value: '1000' });
-  const str = h('input', { class: 'input', type: 'number', inputmode: 'numeric', value: '1000' });
+  // 엔코더 펌웨어(feat-robot main.cpp)의 1cm 당 펄스 값. 측정 결과는 이 값을 기준으로 비례 계산한다.
+  const fwd = h('input', { class: 'input', type: 'number', inputmode: 'decimal', step: '0.1', value: '32.5' });
+  const str = h('input', { class: 'input', type: 'number', inputmode: 'decimal', step: '0.1', value: '32.3' });
   const measBtn = btn('이동 거리 측정', { block: true });
   measBtn.addEventListener('click', async () => {
     const yes = await confirmDialog({
       title: '이동 거리를 잴까요?',
-      message: '로봇이 홈에서 앞뒤·좌우로 1칸씩, 그리고 짧게 여러 번 움직인 뒤 홈 중앙으로 돌아옵니다. 주변 칸을 비워 주세요. 1~2분 걸립니다.',
+      message: '로봇이 홈에서 앞뒤·좌우로 1칸씩, 짧게 여러 번 움직이고 제자리 회전도 한 뒤 홈 중앙으로 돌아옵니다. 주변 칸을 비워 주세요. 1~2분 걸립니다.',
       yes: '시작', no: '취소', danger: false,
     });
     if (!yes) return;
     await busy(measBtn, async () => {
       try {
-        await api.measureMoves(Number(fwd.value) || 1000, Number(str.value) || 1000);
+        await api.measureMoves(Number(fwd.value) || 32.5, Number(str.value) || 32.3);
         toast('측정을 시작했습니다. 끝나면 이 화면에 추천값이 나옵니다.', 'ok');
       } catch (e) { toast(e.message, 'error'); }
       refresh();
@@ -363,8 +364,8 @@ function aprilTagSettings() {
     info,
     calBtn,
     detBtn,
-    field('지금 펌웨어 FORWARD_RUN_MS', fwd),
-    field('지금 펌웨어 STRAFE_RUN_MS', str),
+    field('지금 펌웨어 PULSES_PER_CM_FWD', fwd),
+    field('지금 펌웨어 PULSES_PER_CM_STRAFE', str),
     measBtn,
     btn('상태 새로고침', { block: true, onClick: refresh }),
   ];

@@ -3,16 +3,18 @@
   POST /apriltag/calibrate      로봇을 홈 칸 중앙에 정확히 놓고 한 번 누른다 (기준 저장, DB) [관리자]
   GET  /apriltag/detect         지금 보이는 태그와 추정 위치
   POST /apriltag/home-check     홈 위치 다시 확인 (어긋났으면 자동 보정 시작)
-  POST /apriltag/measure-moves  홈에서 1칸 이동/짧은 이동을 해 보고 실제 이동 거리를 잰다 [관리자]
-                                -> FORWARD_RUN_MS / STRAFE_RUN_MS 추천값 + 짧은 이동 학습
+  POST /apriltag/measure-moves  홈에서 1칸 이동/짧은 이동/회전을 해 보고 실제 이동 거리를 잰다 [관리자]
+                                -> PULSES_PER_CM_FWD / PULSES_PER_CM_STRAFE 추천값 + 짧은 이동 배율 학습
   GET  /apriltag/status         진행 중인 작업, 마지막 결과, 학습된 짧은 이동 모델
   POST /apriltag/job-done       브리지가 raw 명령(nudge 등)을 끝낼 때마다 부른다
 
 흐름
   - 복귀 도착(/command/done 의 returned_home) -> after_return_home() 가 사진을 찍어 확인
   - 어긋났으면(5cm / 3도 초과) 자동 보정: 가장 큰 오차 하나를 nudge 로 줄이고 -> 다시 찍고 -> 반복
-  - nudge 를 몇 ms 보내야 몇 cm 가는지는 미리 정하지 않는다. 처음엔 작게(FIRST_MS) 보내고,
-    AprilTag 로 잰 실제 이동량을 DB 에 쌓아 'ms -> 거리' 를 직선으로 맞춘다 (쓸수록 정확해짐)
+  - ESP32(feat-robot 펌웨어)는 엔코더 펄스로 거리를 센다. 짧은 이동은 cm, 회전은 도 단위로 보낸다.
+      nudge <forward|backward|left|right> <cm>   (1~15cm, 응답: DONE nudge <방향> <cm>)
+      rotate <각도>                              (+ 시계 / - 반시계, 응답: DONE rotate <각도>)
+  - 명령한 양과 AprilTag 로 잰 실제 이동량을 DB 에 쌓아 '실제/명령' 배율을 맞춘다 (쓸수록 정확해짐)
   - 보정이 안 되면(MAX_STEPS 초과, 오차가 너무 큼, 태그가 안 보임, ESP32 가 거부) 사람을 부른다
   - 그동안 state.home_misaligned = True 라 대기열 출발/새 배송은 멈춰 있다
 
@@ -41,13 +43,15 @@ AUTO_MAX_CM = 20.0       # 이보다 크게 어긋났으면 자동 보정하지 
 AUTO_MAX_DEG = 15.0
 TARGET_CM = 2.5          # 보정할 때 이 이하로 줄이려고 한다 (끝내는 기준은 HOME_TOL_CM)
 MAX_STEPS = 8            # nudge 최대 횟수
-GAIN = 0.9               # 계산한 ms 의 90% 만 보낸다 (지나치지 않게)
+GAIN = 0.9               # 계산한 양의 90% 만 보낸다 (지나치지 않게)
 
 GROUP = {"forward": "fb", "backward": "fb", "left": "lr", "right": "lr", "cw": "rot", "ccw": "rot"}
 UNIT = {"fb": "cm", "lr": "cm", "rot": "deg"}
-FIRST_MS = {"fb": 120, "lr": 120, "rot": 80}    # 학습 전 첫 nudge (일부러 작게)
-NUDGE_MIN_MS, NUDGE_MAX_MS = 30, 500            # 펌웨어 범위(20~600) 안
-DEFAULT_DEAD_MS = 30.0                          # 샘플이 1개뿐일 때 가정하는 '안 움직이는 시간'
+# 펌웨어 범위 (feat-robot main.cpp): nudge 1~15cm, rotate 최대 ROTATE_MAX_DEG(180)
+# 범위를 넘는 값을 보내면 펌웨어가 잘라서 응답하므로 expect("DONE <line>") 와 달라진다 -> 여기서 미리 자른다
+CMD_MIN = {"fb": 1, "lr": 1, "rot": 1}
+CMD_MAX = {"fb": 15, "lr": 15, "rot": 30}
+MIN_SCALE, MAX_SCALE = 0.3, 3.0                 # 배율이 이 밖이면 측정이 잘못된 것으로 보고 무시
 MAX_SAMPLES = 30
 
 
@@ -60,8 +64,9 @@ def capture():
 # ---------- DB ----------
 def _ensure_tables(conn):
     conn.execute("CREATE TABLE IF NOT EXISTS apriltag_ref (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL)")
-    conn.execute("""CREATE TABLE IF NOT EXISTS nudge_samples (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, grp TEXT NOT NULL, ms INTEGER NOT NULL,
+    # 예전 nudge_samples(ms 기준)는 엔코더 펌웨어와 단위가 달라 쓰지 않는다
+    conn.execute("""CREATE TABLE IF NOT EXISTS nudge_samples_enc (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, grp TEXT NOT NULL, cmd REAL NOT NULL,
         delta REAL NOT NULL, ts REAL NOT NULL)""")
 
 
@@ -81,12 +86,14 @@ def save_ref(ref):
     conn.close()
 
 
-def add_sample(grp, ms, delta):
+def add_sample(grp, cmd, delta):
+    """cmd: 명령한 양(cm 또는 도), delta: AprilTag 로 잰 실제 이동량"""
     conn = get_db()
     _ensure_tables(conn)
-    conn.execute("INSERT INTO nudge_samples (grp, ms, delta, ts) VALUES (?, ?, ?, ?)", (grp, int(ms), float(delta), time.time()))
-    conn.execute("""DELETE FROM nudge_samples WHERE grp = ? AND id NOT IN
-                    (SELECT id FROM nudge_samples WHERE grp = ? ORDER BY id DESC LIMIT ?)""", (grp, grp, MAX_SAMPLES))
+    conn.execute("INSERT INTO nudge_samples_enc (grp, cmd, delta, ts) VALUES (?, ?, ?, ?)",
+                 (grp, float(cmd), float(delta), time.time()))
+    conn.execute("""DELETE FROM nudge_samples_enc WHERE grp = ? AND id NOT IN
+                    (SELECT id FROM nudge_samples_enc WHERE grp = ? ORDER BY id DESC LIMIT ?)""", (grp, grp, MAX_SAMPLES))
     conn.commit()
     conn.close()
 
@@ -94,44 +101,50 @@ def add_sample(grp, ms, delta):
 def clear_samples():
     conn = get_db()
     _ensure_tables(conn)
-    conn.execute("DELETE FROM nudge_samples")
+    conn.execute("DELETE FROM nudge_samples_enc")
     conn.commit()
     conn.close()
 
 
 def nudge_model(grp):
-    """쌓인 샘플로 '이동량 = k * (ms - dead)' 를 맞춘다. 맞출 수 없으면 None."""
+    """쌓인 샘플로 '실제 이동량 = scale * 명령한 양' 의 scale 을 맞춘다 (원점 지나는 직선). 샘플이 없으면 None."""
     conn = get_db()
     _ensure_tables(conn)
-    rows = conn.execute("SELECT ms, delta FROM nudge_samples WHERE grp = ?", (grp,)).fetchall()
+    rows = conn.execute("SELECT cmd, delta FROM nudge_samples_enc WHERE grp = ?", (grp,)).fetchall()
     conn.close()
+    rows = [(c, d) for c, d in rows if c > 0 and MIN_SCALE <= d / c <= MAX_SCALE]
     if not rows:
         return None
-    ms = [r[0] for r in rows]
-    d = [r[1] for r in rows]
-    if len(set(ms)) >= 2:
-        n = len(ms)
-        mx, my = sum(ms) / n, sum(d) / n
-        sxx = sum((x - mx) ** 2 for x in ms)
-        a = sum((x - mx) * (y - my) for x, y in zip(ms, d)) / sxx
-        if a > 1e-4:
-            b = my - a * mx
-            dead = min(max(-b / a, 0.0), 200.0)
-            return {"k_per_ms": a, "dead_ms": dead, "n": n}
-    # ms 가 하나뿐이면 dead 를 가정
-    pos = [(x, y) for x, y in zip(ms, d) if x > DEFAULT_DEAD_MS and y > 0.2]
-    if not pos:
-        return None
-    k = sum(y / (x - DEFAULT_DEAD_MS) for x, y in pos) / len(pos)
-    return {"k_per_ms": k, "dead_ms": DEFAULT_DEAD_MS, "n": len(rows)}
+    scale = sum(c * d for c, d in rows) / sum(c * c for c, _ in rows)
+    return {"scale": scale, "n": len(rows)}
 
 
-def plan_ms(grp, amount):
+def plan_amount(grp, want):
+    """want(cm 또는 도)만큼 움직이려면 펌웨어에 얼마를 보낼지. 정수, 펌웨어 범위 안."""
     m = nudge_model(grp)
-    if m is None:
-        return FIRST_MS[grp]
-    ms = m["dead_ms"] + GAIN * amount / m["k_per_ms"]
-    return int(min(max(ms, NUDGE_MIN_MS), NUDGE_MAX_MS))
+    scale = m["scale"] if m else 1.0          # 학습 전에는 펌웨어 엔코더 값을 그대로 믿는다
+    amt = round(GAIN * want / scale)
+    return int(min(max(amt, CMD_MIN[grp]), CMD_MAX[grp]))
+
+
+def _cmd_line(d, amount):
+    """방향 + 양 -> ESP32 로 보낼 한 줄"""
+    if d == "cw":
+        return f"rotate {amount}"
+    if d == "ccw":
+        return f"rotate -{amount}"
+    return f"nudge {d} {amount}"
+
+
+def _parse_line(line):
+    """ESP32 명령 한 줄 -> (방향, 양). 1칸 이동(forward 1 등)은 양 = 칸 수."""
+    parts = line.split()
+    if parts[0] == "nudge":
+        return parts[1], int(parts[2])
+    if parts[0] == "rotate":
+        deg = int(parts[1])
+        return ("cw" if deg > 0 else "ccw"), abs(deg)
+    return parts[0], int(parts[1])
 
 
 # ---------- 공통 ----------
@@ -259,16 +272,16 @@ def _next_correction(job, r):
     plan = _plan_correction(r)
     if plan is None:                                # 2.5cm 이하인데 ok 가 아니면 yaw 없이 판정한 경우뿐
         return _finish(job, r, True)
-    d, grp, amount = plan
-    ms = plan_ms(grp, amount)
-    # 같은 방향으로 이미 최대 ms 를 보냈는데도 거의 안 움직였으면 포기
-    stuck = [h for h in job["history"] if h["dir"] == d and h["ms"] >= NUDGE_MAX_MS and (h["moved"] or 0) < 0.5]
+    d, grp, want = plan
+    amt = plan_amount(grp, want)
+    # 같은 방향으로 보냈는데 두 번 다 거의 안 움직였으면 포기
+    stuck = [h for h in job["history"] if h["dir"] == d and (h["moved"] or 0) < 0.5]
     if len(stuck) >= 2:
         return _finish(job, r, False, "not_moving")
     job["step"] += 1
-    job["pending"] = {"dir": d, "grp": grp, "ms": ms, "want": round(amount, 1)}
+    job["pending"] = {"kind": "nudge", "dir": d, "grp": grp, "cmd": amt, "want": round(want, 1)}
     job["before"] = r
-    _send_raw(f"nudge {d} {ms}")
+    _send_raw(_cmd_line(d, amt))
     _publish(dict(r, reason="correcting"), True)
 
 
@@ -330,7 +343,7 @@ def clear_home_check():
 
 
 # ---------- 이동 거리 측정 ----------
-CELL_PROBE_MS = {"fb": "forward_run_ms", "lr": "strafe_run_ms"}
+CELL_PROBE_PPC = {"fb": "pulses_per_cm_fwd", "lr": "pulses_per_cm_strafe"}
 
 
 def _measure_summary(job):
@@ -341,15 +354,17 @@ def _measure_summary(job):
     out = {}
     for grp, vals in cells.items():
         avg = sum(vals) / len(vals)
-        cur = job["params"][CELL_PROBE_MS[grp]]
+        cur = job["params"][CELL_PROBE_PPC[grp]]
+        # 펌웨어는 34cm x PULSES_PER_CM 펄스를 세고 멈춘다. 실제로 avg cm 갔다면 1cm 당 펄스는 cur x 34 / avg.
+        # (STOP_EARLY 이후 더 미끄러지는 양도 섞여 있으므로 근사치. 바꾼 뒤 다시 재서 확인한다)
         out[grp] = {"moved_cm": [round(v, 1) for v in vals], "avg_cm": round(avg, 1),
-                    "current_ms": cur,
-                    "recommended_ms": round(cur * tagmod.CELL_CM / avg) if avg > 1 else None}
+                    "current_pulses_per_cm": cur,
+                    "recommended_pulses_per_cm": round(cur * tagmod.CELL_CM / avg, 1) if avg > 1 else None}
     models = {}
     for grp in ("fb", "lr", "rot"):
         m = nudge_model(grp)
         if m:
-            models[grp] = {"dead_ms": round(m["dead_ms"]), f"{UNIT[grp]}_per_100ms": round(m["k_per_ms"] * 100, 2), "samples": m["n"]}
+            models[grp] = {"scale": round(m["scale"], 2), "unit": UNIT[grp], "samples": m["n"]}
     return {"cell_move": out, "nudge_model": models}
 
 
@@ -365,19 +380,20 @@ def _next_measure(job, r):
         return _next_correction(job, r)
     kind, line = job["queue"].pop(0)
     job["step"] += 1
-    d = line.split()[1] if kind == "nudge" else line.split()[0]
+    d, amt = _parse_line(line)
     job["pending"] = {"kind": kind, "dir": d, "grp": GROUP[d],
-                      "ms": int(line.split()[2]) if kind == "nudge" else None, "line": line}
+                      "cmd": amt if kind == "nudge" else None, "line": line}
     job["before"] = r
     _send_raw(line)
     _publish(dict(r, reason="measuring"), True)
 
 
 class MeasureParams(BaseModel):
-    forward_run_ms: int = 1000     # 지금 펌웨어의 FORWARD_RUN_MS
-    strafe_run_ms: int = 1000      # 지금 펌웨어의 STRAFE_RUN_MS
-    reset: bool = True             # 이전에 학습한 짧은 이동 샘플을 지우고 새로 잰다
-    nudge_ms: list[int] = [100, 250]
+    pulses_per_cm_fwd: float = 32.5      # 지금 펌웨어의 PULSES_PER_CM_FWD
+    pulses_per_cm_strafe: float = 32.3   # 지금 펌웨어의 PULSES_PER_CM_STRAFE
+    reset: bool = True                   # 이전에 학습한 짧은 이동 샘플을 지우고 새로 잰다
+    nudge_cm: list[int] = [3, 8]         # 짧은 이동 (1~15cm)
+    rotate_deg: list[int] = [5, 15]      # 제자리 회전 (도)
 
 
 def _free(grid, x, y):
@@ -402,9 +418,13 @@ def measure_moves(p: MeasureParams = MeasureParams()):
         probes += [("cell", "right 1"), ("cell", "left 1")]
     elif _free(grid, hx - 1, hy):
         probes += [("cell", "left 1"), ("cell", "right 1")]
-    for a, b in (("forward", "backward"), ("right", "left"), ("cw", "ccw")):
-        for ms in p.nudge_ms:
-            probes += [("nudge", f"nudge {a} {ms}"), ("nudge", f"nudge {b} {ms}")]
+    for a, b in (("forward", "backward"), ("right", "left")):
+        for cm in p.nudge_cm:
+            cm = int(min(max(cm, CMD_MIN["fb"]), CMD_MAX["fb"]))
+            probes += [("nudge", _cmd_line(a, cm)), ("nudge", _cmd_line(b, cm))]
+    for deg in p.rotate_deg:
+        deg = int(min(max(deg, CMD_MIN["rot"]), CMD_MAX["rot"]))
+        probes += [("nudge", _cmd_line("cw", deg)), ("nudge", _cmd_line("ccw", deg))]
     if p.reset:
         clear_samples()
     r = _measure(settle=False)
@@ -447,13 +467,13 @@ def job_done(j: JobDone):
             return {"status": "cancelled"}
         pend = job.pop("pending", {})
         moved = _moved(pend.get("dir"), job.get("before") or {}, r) if r else None
-        h = {"kind": pend.get("kind", "nudge"), "dir": pend.get("dir"), "ms": pend.get("ms"),
+        h = {"kind": pend.get("kind", "nudge"), "dir": pend.get("dir"), "cmd": pend.get("cmd"),
              "want": pend.get("want"), "moved": None if moved is None else round(moved, 1),
              "error_after_cm": r and r.get("error_cm"), "yaw_after": r and r.get("yaw_deg")}
         job["history"].append(h)
-        if h["kind"] == "nudge" and moved is not None and pend.get("ms"):
-            add_sample(pend["grp"], pend["ms"], moved)
-        print(f"[apriltag] {h['kind']} {h['dir']} {h['ms'] or ''}ms -> moved {h['moved']} "
+        if h["kind"] == "nudge" and moved is not None and pend.get("cmd"):
+            add_sample(pend["grp"], pend["cmd"], moved)
+        print(f"[apriltag] {h['kind']} {h['dir']} {h['cmd'] or ''} -> moved {h['moved']} "
               f"(want {h['want']}) error={h['error_after_cm']} yaw={h['yaw_after']}", flush=True)
         if r is None:
             _finish(job, None, False, "no_reference")
