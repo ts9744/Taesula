@@ -200,13 +200,14 @@ def locate(tags, ref, cols, expect_x_cm=None):
             "offset_cm": [round(x - cxm, 1), round(y - cym, 1)]}
 
 
-def check_home(tags, ref, home, cols, tol_cm=HOME_TOL_CM, yaw_tol_deg=YAW_TOL_DEG):
+def check_home(tags, ref, home, cols, tol_cm=HOME_TOL_CM, yaw_tol_deg=YAW_TOL_DEG, far_yaw=True):
     """홈 칸 중앙에 제대로 서 있는지. 틀어짐(yaw)을 잴 수 있으면 yaw_tol_deg 도 본다.
 
+    far_yaw=False: 멀어도 태그가 옆으로 보이는 것을 좌우 위치로 읽는다 (이동 거리 측정용. 켜 두면 좌우 이동이 0 으로 잡힌다)
     반환: {"ok": bool, "reason", "error_cm": [dx, dy] 또는 None, "yaw_deg", "located": locate 결과}
     """
     hx0, _ = cell_center_cm(home)
-    loc = locate(tags, ref, cols, expect_x_cm=hx0)
+    loc = locate(tags, ref, cols, expect_x_cm=hx0 if far_yaw else None)
     if loc is None:
         return {"ok": False, "reason": "tag_not_found", "error_cm": None, "yaw_deg": None, "located": None}
     hx, hy = cell_center_cm(home)

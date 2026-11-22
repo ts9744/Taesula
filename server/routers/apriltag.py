@@ -177,7 +177,7 @@ def _app(cell):
     return None if cell is None else [cell[0] + 1, cell[1] + 1]
 
 
-def _measure(settle=True, cell=None):
+def _measure(settle=True, cell=None, far_yaw=True):
     """사진 한 장으로 cell(기본: 홈) 중앙 기준 확인 결과를 만든다 (lock 밖에서 부른다). 기준이 없으면 None."""
     ref, home = load_ref(), (tuple(cell) if cell is not None else _home())
     if ref is None or home is None:
@@ -192,7 +192,7 @@ def _measure(settle=True, cell=None):
     if not _same_frame(ref, frame):
         return {"ok": False, "reason": "recalibrate", "detail": _frame_msg(ref, frame), "error_cm": None,
                 "yaw_deg": None, "located": None, "home": _app(home)}
-    r = tagmod.check_home(tagmod.detect_tags(frame), ref, home, _cols())
+    r = tagmod.check_home(tagmod.detect_tags(frame), ref, home, _cols(), far_yaw=far_yaw)
     r["home"] = _app(home)
     return r
 
@@ -576,7 +576,7 @@ def measure_moves(p: MeasureParams = MeasureParams()):
         for cm in p.nudge_cm:
             cm = int(min(max(cm, CMD_MIN["fb"]), CMD_MAX["fb"]))
             probes += [("nudge", _cmd_line(a, cm)), ("nudge", _cmd_line(b, cm))]
-    r = _measure(settle=False)
+    r = _measure(settle=False, far_yaw=False)    # 이동 거리 측정은 FAR_YAW 없이 (좌우 이동을 x 로 재야 한다)
     if r is None or r["reason"] in ("tag_not_found", "camera_error", "recalibrate"):
         raise HTTPException(status_code=400, detail=f"태그로 위치를 잴 수 없습니다: {r and (r.get('detail') or r['reason'])}")
     measure_rot = r.get("yaw_deg") is not None and bool(p.rotate_deg)
@@ -617,7 +617,7 @@ def job_done(j: JobDone):
         with state.lock:
             _finish(job, job.get("before"), False, f"esp32:{j.reply}")
         return {"status": "failed"}
-    r = _measure(settle=True, cell=job.get("cell"))
+    r = _measure(settle=True, cell=job.get("cell"), far_yaw=job.get("kind") != "measure")
     with state.lock:
         if state.tag_job is not job:                  # 그 사이 '시작점에 놓기' 등으로 취소됨
             return {"status": "cancelled"}
