@@ -161,7 +161,7 @@ const int   ROTATE_MAX_DEG = 180;
 // [팀원 3035c71 반영] 출발 전 장애물 점검
 //   가는 방향 센서로 3번 재서 가운데 값이 BLOCK_DISTANCE_CM 이하면 출발하지 않고
 //   OBSTACLE <방향> 0 0 <거리> 로 보고 (칸 34cm 기준: 다음 칸 장애물 -> 37cm)
-const long BLOCK_DISTANCE_CM = 37;
+const long BLOCK_DISTANCE_CM[SONAR_COUNT] = {37, 41, 37, 41};   // front, left, back, right
 const int  PRECHECK_SAMPLES = 3;
 
 // [2026-11-19] 장애물로 멈춘 뒤 칸 중앙으로 복귀
@@ -728,7 +728,7 @@ void handleLine(String line) {
         for (int b = a + 1; b < n; b++)
           if (v[b] < v[a]) { float t = v[a]; v[a] = v[b]; v[b] = t; }
       float pd = v[n / 2];
-      if (pd <= BLOCK_DISTANCE_CM) {
+      if (pd <= BLOCK_DISTANCE_CM[sensor]) {
         Serial.println();
         Serial.print("OBSTACLE ");
         Serial.print(dir);

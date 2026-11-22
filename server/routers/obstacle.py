@@ -18,7 +18,7 @@ from server import person_detect, state
 from server.database import get_db, load_grid_from_db
 from server.routers.route import path_to_commands
 from server.replan_logic import (
-    replan, MOVE_DELTA, DETECT_CM, CELL_CM, SENSOR_OFFSET_CM,
+    replan, MOVE_DELTA, DETECT_CM, CELL_CM, sensor_offset,
     distance_to_known_cm, locate_obstacle, in_known_map, plan_with_release, drop_expired,
 )
 
@@ -134,7 +134,7 @@ def mark_dispatched(cmd, steps=1):
         return extras
 
     if cmd in HAS_SENSOR:
-        extras["detect_cm"] = round(CELL_CM * steps + CELL_CM / 2 - SENSOR_OFFSET_CM)
+        extras["detect_cm"] = round(CELL_CM * steps + CELL_CM / 2 - sensor_offset(cmd))
         extras["check_blocked"] = _blocked_ahead(_robot_pos(), cmd)
         pos, grid = _robot_pos(), _grid()
         if pos is not None and grid is not None:
@@ -147,7 +147,7 @@ def _blocked_ahead(pos, cmd):
     d = MOVE_DELTA.get(cmd)
     if pos is None or d is None:
         return False
-    n_max = int((DETECT_CM + SENSOR_OFFSET_CM - CELL_CM / 2) // CELL_CM) + 1
+    n_max = int((DETECT_CM + sensor_offset(cmd) - CELL_CM / 2) // CELL_CM) + 1
     return any((pos[0] + d[0] * n, pos[1] + d[1] * n) in blocked_cells for n in range(1, n_max + 1))
 
 
@@ -323,7 +323,7 @@ def report_clear(r: ClearReport):
     d = MOVE_DELTA.get(r.direction)
     if pos is None or d is None or r.direction not in HAS_SENSOR:
         return {"released": []}
-    reach = (r.distance_cm if r.distance_cm > 0 else DETECT_CM) + r.moved_cm + SENSOR_OFFSET_CM
+    reach = (r.distance_cm if r.distance_cm > 0 else DETECT_CM) + r.moved_cm + sensor_offset(r.direction)
     released = []
     for n in range(1, 6):
         if reach < CELL_CM * n + CELL_CM / 2 + 5:   # 이 칸의 먼 쪽 끝까지 못 봤으면 여기서 멈춘다

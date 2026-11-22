@@ -11,7 +11,12 @@ import time
 
 # 현장 치수 (실제 로봇으로 재서 맞출 것)
 CELL_CM = 34.0           # 한 칸
-SENSOR_OFFSET_CM = 10.5  # 센서에서 로봇 중심까지
+SENSOR_OFFSET_CM = 11.5  # 센서에서 로봇 중심까지
+SENSOR_OFFSET_BY_DIR = {"forward": 11.5, "backward": 11.5, "left": 6.5, "right": 6.5}
+
+
+def sensor_offset(command):
+    return SENSOR_OFFSET_BY_DIR.get(command, SENSOR_OFFSET_CM)
 DETECT_CM = 70.0        # 장애물 탐지 범위(약 두 칸)
 
 # route.py 의 path_to_commands(start_direction="north") 와 동일한 대응
@@ -58,7 +63,7 @@ def distance_to_known_cm(grid, pos, command, max_cells=4):
     for n in range(2, max_cells + 1):
         x, y = pos[0] + n * d[0], pos[1] + n * d[1]
         if not (0 <= x < cols and 0 <= y < rows) or grid[y][x] == 1:
-            return CELL_CM / 2 - SENSOR_OFFSET_CM + CELL_CM * (n - 1)
+            return CELL_CM / 2 - sensor_offset(command) + CELL_CM * (n - 1)
     return None
 
 
@@ -71,7 +76,7 @@ def locate_obstacle(pos, command, distance_cm, moved_cm):
     d = MOVE_DELTA.get(command)
     if d is None:
         return None, None
-    s = distance_cm + moved_cm + SENSOR_OFFSET_CM
+    s = distance_cm + moved_cm + sensor_offset(command)
     n = max(1, math.ceil((s - CELL_CM / 2) / CELL_CM))
     return n, (pos[0] + n * d[0], pos[1] + n * d[1])
 
