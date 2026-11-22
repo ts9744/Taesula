@@ -19,7 +19,7 @@ import numpy as np
 CELL_CM = 34.0
 TAG_SIZE_CM = 5.0        # 태그 검은 부분 한 변 (인쇄 후 자로 재서 맞출 것)
 CAMERA_OFFSET_CM = 12.0  # 로봇 중심 -> 카메라 렌즈 (앞쪽으로). 실측해서 맞출 것
-TAG_GAP_CM = 7.0         # 북쪽 가장자리 -> 태그 판
+TAG_GAP_CM = 0.0         # 북쪽 가장자리 -> 태그 판
 HOME_TOL_CM = 5.0         # 홈 중앙에서 이만큼까지는 정상
 YAW_TOL_DEG = 3.0         # 이만큼까지 틀어진 건 정상 (틀어짐을 잴 수 있을 때만)
 SINGLE_PNP_MIN_PX = 120   # 태그 1개만 보일 때 이 크기(px) 이상이면 그 태그 하나로 틀어짐까지 푼다
