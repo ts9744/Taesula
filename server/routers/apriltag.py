@@ -51,6 +51,11 @@ UNIT = {"fb": "cm", "lr": "cm", "rot": "deg"}
 # 범위를 넘는 값을 보내면 펌웨어가 잘라서 응답하므로 expect("DONE <line>") 와 달라진다 -> 여기서 미리 자른다
 CMD_MIN = {"fb": 1, "lr": 1, "rot": 1}
 CMD_MAX = {"fb": 15, "lr": 15, "rot": 30}
+# 자동 보정 한 번에 보내는 최대량. 카메라가 잘못 읽었을 때 크게 엇나가지 않게 작게 둔다 (측정용 nudge 는 CMD_MAX)
+CORRECT_MAX = {"fb": 6, "lr": 6, "rot": 10}
+# 틀어짐(yaw)을 못 잰 결과(태그 1개 방식)에서는 1도 틀어짐이 좌우 약 2.7cm(거리 153cm)로 보인다.
+# 그래서 yaw 를 모르는데 좌우가 이보다 크게 어긋났으면 회전 때문일 수 있으므로 자동 보정하지 않고 사람을 부른다
+YAWLESS_MAX_LR_CM = 8.0
 MIN_SCALE, MAX_SCALE = 0.3, 3.0                 # 배율이 이 밖이면 측정이 잘못된 것으로 보고 무시
 MAX_SAMPLES = 30
 
@@ -98,10 +103,11 @@ def add_sample(grp, cmd, delta):
     conn.close()
 
 
-def clear_samples():
+def clear_samples(groups=("fb", "lr", "rot")):
+    """groups 의 샘플만 지운다 (회전을 안 재는 측정이 예전에 배운 회전 배율까지 지우지 않게)"""
     conn = get_db()
     _ensure_tables(conn)
-    conn.execute("DELETE FROM nudge_samples_enc")
+    conn.executemany("DELETE FROM nudge_samples_enc WHERE grp = ?", [(g,) for g in groups])
     conn.commit()
     conn.close()
 
@@ -124,7 +130,7 @@ def plan_amount(grp, want):
     m = nudge_model(grp)
     scale = m["scale"] if m else 1.0          # 학습 전에는 펌웨어 엔코더 값을 그대로 믿는다
     amt = round(GAIN * want / scale)
-    return int(min(max(amt, CMD_MIN[grp]), CMD_MAX[grp]))
+    return int(min(max(amt, CMD_MIN[grp]), CORRECT_MAX[grp]))
 
 
 def _cmd_line(d, amount):
@@ -269,6 +275,8 @@ def _next_correction(job, r):
         return _finish(job, r, False, "too_far")
     if job["step"] >= MAX_STEPS:
         return _finish(job, r, False, "too_many_steps")
+    if r.get("yaw_deg") is None and abs(r["error_cm"][0]) > YAWLESS_MAX_LR_CM:
+        return _finish(job, r, False, "maybe_rotated")
     plan = _plan_correction(r)
     if plan is None:                                # 2.5cm 이하인데 ok 가 아니면 yaw 없이 판정한 경우뿐
         return _finish(job, r, True)
@@ -393,7 +401,10 @@ class MeasureParams(BaseModel):
     pulses_per_cm_strafe: float = 32.3   # 지금 펌웨어의 PULSES_PER_CM_STRAFE
     reset: bool = True                   # 이전에 학습한 짧은 이동 샘플을 지우고 새로 잰다
     nudge_cm: list[int] = [3, 8]         # 짧은 이동 (1~15cm)
-    rotate_deg: list[int] = [5, 15]      # 제자리 회전 (도)
+    # 제자리 회전 (도). 측정 시작 때 카메라가 틀어짐(yaw)을 잴 수 있을 때만 한다.
+    # 홈이 태그에서 멀면(아랫줄, 태그 < 120px) yaw 를 못 재서 회전량을 배울 수 없고,
+    # 회전 왕복 뒤 남은 몇 도가 좌우 어긋남으로 읽혀 자동 보정이 로봇을 옆으로 보냈다 (2026-11-21 nudge right 15 x2).
+    rotate_deg: list[int] = [5, 15]
 
 
 def _free(grid, x, y):
@@ -422,20 +433,22 @@ def measure_moves(p: MeasureParams = MeasureParams()):
         for cm in p.nudge_cm:
             cm = int(min(max(cm, CMD_MIN["fb"]), CMD_MAX["fb"]))
             probes += [("nudge", _cmd_line(a, cm)), ("nudge", _cmd_line(b, cm))]
-    for deg in p.rotate_deg:
-        deg = int(min(max(deg, CMD_MIN["rot"]), CMD_MAX["rot"]))
-        probes += [("nudge", _cmd_line("cw", deg)), ("nudge", _cmd_line("ccw", deg))]
-    if p.reset:
-        clear_samples()
     r = _measure(settle=False)
     if r is None or r["reason"] in ("tag_not_found", "camera_error", "recalibrate"):
         raise HTTPException(status_code=400, detail=f"태그로 위치를 잴 수 없습니다: {r and (r.get('detail') or r['reason'])}")
+    measure_rot = r.get("yaw_deg") is not None and bool(p.rotate_deg)
+    if measure_rot:
+        for deg in p.rotate_deg:
+            deg = int(min(max(deg, CMD_MIN["rot"]), CMD_MAX["rot"]))
+            probes += [("nudge", _cmd_line("cw", deg)), ("nudge", _cmd_line("ccw", deg))]
+    if p.reset:
+        clear_samples(("fb", "lr", "rot") if measure_rot else ("fb", "lr"))   # 안 재는 회전 배율은 남긴다
     with state.lock:
         job = {"kind": "measure", "status": "running", "step": 0, "history": [], "queue": list(probes),
-               "params": p.model_dump(), "started_at": time.time()}
+               "params": p.model_dump(), "measure_rot": measure_rot, "started_at": time.time()}
         state.tag_job = job
         _next_measure(job, r)
-    return {"status": "started", "probes": [l for _, l in probes]}
+    return {"status": "started", "measure_rot": measure_rot, "probes": [l for _, l in probes]}
 
 
 def _require_idle_at_home(obstacle):
