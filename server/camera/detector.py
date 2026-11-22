@@ -24,6 +24,7 @@ MODEL_PATH = BASE_DIR / "models" / "yolov8n.hef"
 CLASS_NAMES = [
     "Box",
     "Cone",
+    "Leg",
 ]
 
 SCORE_THRESHOLD = 0.5
