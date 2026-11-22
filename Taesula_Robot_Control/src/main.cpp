@@ -254,6 +254,19 @@ const unsigned long BRAKE_MS = 250;            // 감속 후 브레이크 (이�
 const unsigned long EMERGENCY_BRAKE_MS = 120;  // 장애물/stop 급정지 때 (감속 없이 바로라 짧게)
 bool motorsRunning = false;
 float speedScale = 1.0;               // 감속 중에만 1.0 -> 0 으로 내려감
+float baseScale  = 1.0;               // nudge 때만 NUDGE_SPEED_SCALE (감속은 이 속도 기준으로 한다)
+
+// [2026-11-22] nudge(AprilTag 보정용 짧은 이동)
+//   예전: 목표 펄스가 STOP_EARLY(앞뒤 373 = 11.7cm, 좌우 265 = 8.2cm)보다 작으면 STOP_EARLY+1 로 올려서
+//         3cm 든 8cm 든 '최고 속도로 출발하자마자 감속' 하는 같은 동작이 됐다 (실측 fb 3/8cm -> 둘 다 약 6cm, lr 은 거의 안 감).
+//         출발 순간 바퀴마다 도는 시점이 달라 sync 가 맞추기 전에 끝나서 틀어졌다.
+//   지금: 느린 속도로 가고, 느린 속도에 맞는 작은 STOP_EARLY 를 쓴다
+//   튜닝: nudge forward 3 / 6 / 10, nudge right 3 / 6 을 줄자로 재서
+//         - 바퀴 하나라도 안 돌거나 옆이동이 안 되면 NUDGE_SPEED_SCALE 을 0.05 씩 올림
+//         - 명령보다 더 가면 NUDGE_STOP_EARLY_* 를 올리고, 덜 가면 내림 (1cm 당 약 32펄스)
+const float NUDGE_SPEED_SCALE      = 0.6;
+const long  NUDGE_STOP_EARLY_FWD    = 100;
+const long  NUDGE_STOP_EARLY_STRAFE = 80;
 void (*currentAction)() = nullptr;    // 지금 실행 중인 이동 (감속할 때 다시 호출)
 
 bool sonarEnabled = true;   // sonar off 로 끌 수 있음. 리셋하면 다시 ON
@@ -517,19 +530,21 @@ void handleLine(String line) {
 
     gRunMs = st ? STRAFE_RUN_MS : FORWARD_RUN_MS;
     gPulsesPerCell = CELL_CM * (st ? PULSES_PER_CM_STRAFE : PULSES_PER_CM_FWD);
-    gStopEarly = st ? STOP_EARLY_PULSES_STRAFE : STOP_EARLY_PULSES_FWD;
+    gStopEarly = st ? NUDGE_STOP_EARLY_STRAFE : NUDGE_STOP_EARLY_FWD;
     unsigned long nms = (unsigned long)((float)cm / CELL_CM * (float)gRunMs);
     if (USE_ENC_DIST) {
       gTargetPulses = (long)(cm * (st ? PULSES_PER_CM_STRAFE : PULSES_PER_CM_FWD));
       if (gTargetPulses <= gStopEarly) gTargetPulses = gStopEarly + 1;
-      nms = nms * 2 + 500;
+      nms = (unsigned long)(nms * 2 / NUDGE_SPEED_SCALE) + 500;   // 느리게 가므로 시간 한도도 늘린다
     } else {
       gTargetPulses = 0;
     }
 
     unsigned long nr = 0;
     float nd2 = -1;
+    baseScale = NUDGE_SPEED_SCALE;
     RunResult rr = runTimed(na, nms, ns, nr, nd2);
+    baseScale = 1.0;
     Serial.println();
     if (rr == RUN_OBSTACLE) {
       Serial.print("OBSTACLE nudge ");
@@ -1028,7 +1043,7 @@ bool pollStopDuringMove() {
 // 기본 속도 x 바퀴별 보정 (0~255)
 // ===============================
 int trimmed(int base, float trim) {
-  int v = (int)(base * trim * speedScale + 0.5f);
+  int v = (int)(base * trim * speedScale * baseScale + 0.5f);
   if (v > 255) v = 255;
   if (v < 0) v = 0;
   return v;
