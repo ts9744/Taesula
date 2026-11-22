@@ -67,6 +67,7 @@ export default {
       if (hc.reason === 'camera_error') return `카메라 오류로 홈 위치를 확인하지 못했습니다. (${hc.detail || ''})`;
       if (hc.reason === 'recalibrate') return hc.detail || '카메라 설정이 바뀌었습니다. 설정에서 AprilTag 기준 등록을 다시 하세요.';
       if (hc.reason === 'too_far') return '홈에서 너무 많이 벗어나 자동 보정을 하지 않았습니다. 로봇을 홈에 놓고 시작점에 놓기를 누르세요.';
+      if (hc.reason === 'maybe_rotated') return '로봇이 회전해 있을 수 있어 자동 보정을 하지 않았습니다. 로봇을 홈에 똑바로 놓고 시작점에 놓기를 누르세요.';
       if (hc.reason === 'too_many_steps' || hc.reason === 'not_moving') return '자동 보정으로 홈 위치를 맞추지 못했습니다. 로봇을 맞춰 놓고 다시 확인하세요.';
       if (String(hc.reason).startsWith('esp32:')) return '자동 보정 중 로봇이 명령을 수행하지 못했습니다(장애물 등). 주변을 확인하고 다시 확인을 누르세요.';
       const [dx, dy] = hc.error_cm || [0, 0];
@@ -304,7 +305,11 @@ function aprilTagSettings() {
       const s = await api.tagStatus();
       const m = s.last_measure && s.last_measure.cell_move;
       const rec = m ? Object.entries(m).map(([g, v]) => `${g === 'fb' ? '앞뒤' : '좌우'} 1칸 ${v.avg_cm}cm → ${g === 'fb' ? 'PULSES_PER_CM_FWD' : 'PULSES_PER_CM_STRAFE'} 추천 ${v.recommended_pulses_per_cm ?? '-'}`).join(' / ') : '';
-      info.textContent = `${s.calibrated ? '기준 등록됨' : '기준 없음 (먼저 기준 등록)'}${s.job ? ` · 진행 중: ${s.job.kind === 'measure' ? '이동 거리 측정' : '자동 보정'}` : ''}${rec ? ` · ${rec}` : ''}`;
+      const rot = s.nudge_model && s.nudge_model.rot;
+      const rotTxt = rot ? ` · 회전: 명령 대비 실제 x${rot.scale.toFixed(2)} (${rot.n}회) → 새 ROTATE_PULSES_PER_DEG = 지금 값 ÷ ${rot.scale.toFixed(2)}` : '';
+      const dc = s.dest_check;
+      const dcTxt = dc ? ` · 마지막 배송지 확인: ${dc.reason === 'ok' ? '정상' : dc.reason}${dc.error_cm ? ` (x ${dc.error_cm[0]}cm, y ${dc.error_cm[1]}cm)` : ''}` : '';
+      info.textContent = `${s.calibrated ? '기준 등록됨' : '기준 없음 (먼저 기준 등록)'}${s.job ? ` · 진행 중: ${s.job.kind === 'measure' ? '이동 거리 측정' : (s.job.where === 'dest' ? '배송지 보정' : '자동 보정')}` : ''}${rec ? ` · ${rec}` : ''}${rotTxt}${dcTxt}`;
     } catch (e) { info.textContent = `상태를 불러오지 못했습니다. ${e.message}`; }
   };
 
@@ -345,14 +350,15 @@ function aprilTagSettings() {
   measBtn.addEventListener('click', async () => {
     const yes = await confirmDialog({
       title: '이동 거리를 잴까요?',
-      message: '로봇이 홈에서 앞뒤·좌우로 1칸씩, 짧게 여러 번 움직이고 제자리 회전도 한 뒤 홈 중앙으로 돌아옵니다. 주변 칸을 비워 주세요. 1~2분 걸립니다.',
+      message: '로봇이 홈에서 앞뒤·좌우로 1칸씩, 짧게 여러 번 움직이고, 카메라가 틀어짐을 잴 수 있으면 제자리 회전도 한 뒤 홈 중앙으로 돌아옵니다. 주변 칸을 비워 주세요. 1~2분 걸립니다.',
       yes: '시작', no: '취소', danger: false,
     });
     if (!yes) return;
     await busy(measBtn, async () => {
       try {
-        await api.measureMoves(Number(fwd.value) || 32.5, Number(str.value) || 32.3);
-        toast('측정을 시작했습니다. 끝나면 이 화면에 추천값이 나옵니다.', 'ok');
+        const r = await api.measureMoves(Number(fwd.value) || 32.5, Number(str.value) || 32.3);
+        toast(r.measure_rot ? '측정을 시작했습니다 (회전 포함). 끝나면 이 화면에 추천값이 나옵니다.'
+                            : '측정을 시작했습니다. 홈에서 틀어짐을 잴 수 없어 회전은 재지 않습니다 (배운 회전 배율은 유지).', 'ok');
       } catch (e) { toast(e.message, 'error'); }
       refresh();
     });

@@ -77,6 +77,8 @@ def maybe_auto_return(now=None):
     now = time.time() if now is None else now
     if now < return_at:
         return
+    if getattr(state, "tag_job", None) is not None:   # 배송지 AprilTag 보정이 끝날 때까지 복귀를 미룬다
+        return
     if state.current_path:          # 그 사이 새 명령이 들어왔으면 복귀하지 않는다
         state.return_at = None
         return

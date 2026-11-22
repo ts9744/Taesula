@@ -21,6 +21,7 @@ placed_at = 0.0
 # AprilTag 홈 위치 확인 (server/routers/apriltag.py)
 home_check = None       # 마지막 확인 결과
 home_misaligned = False # True 면 대기열 출발/새 배송을 막는다 (시작점에 놓기 또는 다시 확인으로 해제)
+dest_check = None       # 마지막 배송지 도착 위치 확인 결과 (apriltag.after_arrive)
 tag_job = None          # 진행 중인 자동 보정/이동 측정 (apriltag.py)
 tag_last_job = None
 tag_last_measure = None   # 마지막으로 '시작점에 놓기'를 한 시각 (브리지 halt 해제 신호)

@@ -107,6 +107,10 @@ def command_done(report: CommandDoneRequest):
         # 카메라 촬영이 최대 몇 초 걸릴 수 있어 lock 밖에서 한다
         from server.routers import apriltag
         result["home_check"] = apriltag.after_return_home()
+    elif result.get("arrived"):
+        # 배송지 칸 중앙에 맞춘다 (보정 중에는 home.maybe_auto_return 이 복귀를 미룬다)
+        from server.routers import apriltag
+        result["dest_check"] = apriltag.after_arrive()
     return result
 
 

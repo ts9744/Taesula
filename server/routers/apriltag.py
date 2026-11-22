@@ -17,6 +17,8 @@
   - 명령한 양과 AprilTag 로 잰 실제 이동량을 DB 에 쌓아 '실제/명령' 배율을 맞춘다 (쓸수록 정확해짐)
   - 보정이 안 되면(MAX_STEPS 초과, 오차가 너무 큼, 태그가 안 보임, ESP32 가 거부) 사람을 부른다
   - 그동안 state.home_misaligned = True 라 대기열 출발/새 배송은 멈춰 있다
+  - 배송지 도착(/command/done 의 arrived) -> after_arrive() 가 같은 방법으로 그 칸 중앙에 맞춘다 (DEST_CHECK)
+    배송지 결과는 state.dest_check 에만 남기고 배송을 막지 않는다. 보정 중에는 자동 복귀를 미룬다
 
 명령 전달: state.current_path 에 "raw:<ESP32 로 보낼 줄>" 을 넣는다.
   /next-command 가 {"direction": "raw", "line", "expect"} 로 내보내고, 브리지는 그대로 보내고 결과를 job-done 으로 알린다.
@@ -39,6 +41,7 @@ SETTLE_SEC = 0.3     # 브레이크 후 흔들림이 멎을 때까지 기다렸�
 
 # ---------- 자동 보정 설정 ----------
 AUTO_CORRECT = True
+DEST_CHECK = True        # 배송지 도착 때도 위치 확인 + 보정 (False 면 홈 복귀 때만)
 AUTO_MAX_CM = 20.0       # 이보다 크게 어긋났으면 자동 보정하지 않고 사람을 부른다
 AUTO_MAX_DEG = 15.0
 TARGET_CM = 2.5          # 보정할 때 이 이하로 줄이려고 한다 (끝내는 기준은 HOME_TOL_CM)
@@ -51,6 +54,11 @@ UNIT = {"fb": "cm", "lr": "cm", "rot": "deg"}
 # 범위를 넘는 값을 보내면 펌웨어가 잘라서 응답하므로 expect("DONE <line>") 와 달라진다 -> 여기서 미리 자른다
 CMD_MIN = {"fb": 1, "lr": 1, "rot": 1}
 CMD_MAX = {"fb": 15, "lr": 15, "rot": 30}
+# 자동 보정 한 번에 보내는 최대량. 카메라가 잘못 읽었을 때 크게 엇나가지 않게 작게 둔다 (측정용 nudge 는 CMD_MAX)
+CORRECT_MAX = {"fb": 6, "lr": 6, "rot": 10}
+# 틀어짐(yaw)을 못 잰 결과(태그 1개 방식)에서는 1도 틀어짐이 좌우 약 2.7cm(거리 153cm)로 보인다.
+# 그래서 yaw 를 모르는데 좌우가 이보다 크게 어긋났으면 회전 때문일 수 있으므로 자동 보정하지 않고 사람을 부른다
+YAWLESS_MAX_LR_CM = 8.0
 MIN_SCALE, MAX_SCALE = 0.3, 3.0                 # 배율이 이 밖이면 측정이 잘못된 것으로 보고 무시
 MAX_SAMPLES = 30
 
@@ -98,10 +106,11 @@ def add_sample(grp, cmd, delta):
     conn.close()
 
 
-def clear_samples():
+def clear_samples(groups=("fb", "lr", "rot")):
+    """groups 의 샘플만 지운다 (회전을 안 재는 측정이 예전에 배운 회전 배율까지 지우지 않게)"""
     conn = get_db()
     _ensure_tables(conn)
-    conn.execute("DELETE FROM nudge_samples_enc")
+    conn.executemany("DELETE FROM nudge_samples_enc WHERE grp = ?", [(g,) for g in groups])
     conn.commit()
     conn.close()
 
@@ -124,7 +133,7 @@ def plan_amount(grp, want):
     m = nudge_model(grp)
     scale = m["scale"] if m else 1.0          # 학습 전에는 펌웨어 엔코더 값을 그대로 믿는다
     amt = round(GAIN * want / scale)
-    return int(min(max(amt, CMD_MIN[grp]), CMD_MAX[grp]))
+    return int(min(max(amt, CMD_MIN[grp]), CORRECT_MAX[grp]))
 
 
 def _cmd_line(d, amount):
@@ -163,9 +172,9 @@ def _app(cell):
     return None if cell is None else [cell[0] + 1, cell[1] + 1]
 
 
-def _measure(settle=True):
-    """사진 한 장으로 홈 확인 결과를 만든다 (lock 밖에서 부른다). 기준이 없으면 None."""
-    ref, home = load_ref(), _home()
+def _measure(settle=True, cell=None):
+    """사진 한 장으로 cell(기본: 홈) 중앙 기준 확인 결과를 만든다 (lock 밖에서 부른다). 기준이 없으면 None."""
+    ref, home = load_ref(), (tuple(cell) if cell is not None else _home())
     if ref is None or home is None:
         return None
     if settle:
@@ -242,6 +251,16 @@ def _too_big(r):
     return max(abs(dx), abs(dy)) > AUTO_MAX_CM or abs(yaw) > AUTO_MAX_DEG
 
 
+def _publish_dest(result):
+    """배송지 확인 결과. 홈과 달리 배송/대기열을 막지 않는다."""
+    r = dict(result)
+    if r.get("located"):
+        r["located"] = dict(r["located"], cell=_app(r["located"]["cell"]))
+    r["checked_at"] = time.time()
+    state.dest_check = r
+    return r
+
+
 def _finish(job, r, ok, reason=None):
     job["status"] = "done" if ok else "failed"
     if reason:
@@ -250,6 +269,13 @@ def _finish(job, r, ok, reason=None):
     state.tag_last_job = _job_view(job)
     state.tag_job = None
     _drop_raw()
+    if job.get("where") == "dest":
+        rr = dict(r or {"error_cm": None, "yaw_deg": None, "located": None})
+        if not ok:
+            rr["ok"], rr["reason"] = False, reason or rr.get("reason", "misaligned")
+        _publish_dest(rr)
+        print(f"[apriltag] dest job {job['status']} {reason or ''} history={len(job.get('history', []))}", flush=True)
+        return
     if ok:
         _publish(r, False)
     else:
@@ -269,6 +295,8 @@ def _next_correction(job, r):
         return _finish(job, r, False, "too_far")
     if job["step"] >= MAX_STEPS:
         return _finish(job, r, False, "too_many_steps")
+    if r.get("yaw_deg") is None and abs(r["error_cm"][0]) > YAWLESS_MAX_LR_CM:
+        return _finish(job, r, False, "maybe_rotated")
     plan = _plan_correction(r)
     if plan is None:                                # 2.5cm 이하인데 ok 가 아니면 yaw 없이 판정한 경우뿐
         return _finish(job, r, True)
@@ -282,7 +310,10 @@ def _next_correction(job, r):
     job["pending"] = {"kind": "nudge", "dir": d, "grp": grp, "cmd": amt, "want": round(want, 1)}
     job["before"] = r
     _send_raw(_cmd_line(d, amt))
-    _publish(dict(r, reason="correcting"), True)
+    if job.get("where") == "dest":
+        _publish_dest(dict(r, reason="correcting"))       # 배송지 보정은 홈 상태/대기열을 건드리지 않는다
+    else:
+        _publish(dict(r, reason="correcting"), True)
 
 
 def _moved(d, before, after):
@@ -303,9 +334,10 @@ def _moved(d, before, after):
     return (a["yaw_deg"] - b["yaw_deg"]) if d == "cw" else (b["yaw_deg"] - a["yaw_deg"])
 
 
-def start_correction(r):
-    """state.lock 안에서 부른다."""
-    job = {"kind": "correct", "status": "running", "step": 0, "history": [],
+def start_correction(r, where="home", cell=None):
+    """state.lock 안에서 부른다. where="dest" 면 배송지 칸(cell) 중앙에 맞춘다."""
+    job = {"kind": "correct", "where": where, "cell": None if cell is None else list(cell),
+           "status": "running", "step": 0, "history": [],
            "start_error_cm": r.get("error_cm"), "start_yaw_deg": r.get("yaw_deg"), "started_at": time.time()}
     state.tag_job = job
     _next_correction(job, r)
@@ -327,6 +359,35 @@ def run_home_check(settle=True, auto=True):
             _publish(r, True)
         out = dict(state.home_check)
     print(f"[apriltag] home check: {r['reason']} error_cm={r.get('error_cm')} yaw={r.get('yaw_deg')}", flush=True)
+    return out
+
+
+def after_arrive():
+    """/command/done 이 배송지 도착을 알린 직후 부른다 (state.lock 밖에서).
+    결과는 state.dest_check. 어긋났으면 홈과 같은 방법으로 보정하되, 배송은 막지 않는다."""
+    if not DEST_CHECK:
+        return None
+    from server.routers import obstacle
+    with state.lock:
+        pos = obstacle._robot_pos()
+    if pos is None:
+        return None
+    r = _measure(settle=True, cell=pos)
+    if r is None:
+        return None
+    with state.lock:
+        if getattr(state, "tag_job", None) is not None:      # 다른 보정/측정 중이면 건드리지 않는다
+            return None
+        if r["ok"]:
+            _publish_dest(r)
+        elif AUTO_CORRECT and r["reason"] == "misaligned" and not _too_big(r):
+            start_correction(r, where="dest", cell=pos)
+        else:
+            if r["reason"] == "misaligned" and _too_big(r):
+                r = dict(r, reason="too_far")
+            _publish_dest(r)
+        out = dict(getattr(state, "dest_check", None) or {}, correcting=getattr(state, "tag_job", None) is not None)
+    print(f"[apriltag] dest check {tuple(pos)}: {r['reason']} error_cm={r.get('error_cm')} yaw={r.get('yaw_deg')}", flush=True)
     return out
 
 
@@ -393,7 +454,10 @@ class MeasureParams(BaseModel):
     pulses_per_cm_strafe: float = 32.3   # 지금 펌웨어의 PULSES_PER_CM_STRAFE
     reset: bool = True                   # 이전에 학습한 짧은 이동 샘플을 지우고 새로 잰다
     nudge_cm: list[int] = [3, 8]         # 짧은 이동 (1~15cm)
-    rotate_deg: list[int] = [5, 15]      # 제자리 회전 (도)
+    # 제자리 회전 (도). 측정 시작 때 카메라가 틀어짐(yaw)을 잴 수 있을 때만 한다.
+    # 홈이 태그에서 멀면(아랫줄, 태그 < 120px) yaw 를 못 재서 회전량을 배울 수 없고,
+    # 회전 왕복 뒤 남은 몇 도가 좌우 어긋남으로 읽혀 자동 보정이 로봇을 옆으로 보냈다 (2026-11-21 nudge right 15 x2).
+    rotate_deg: list[int] = [5, 15]
 
 
 def _free(grid, x, y):
@@ -422,20 +486,22 @@ def measure_moves(p: MeasureParams = MeasureParams()):
         for cm in p.nudge_cm:
             cm = int(min(max(cm, CMD_MIN["fb"]), CMD_MAX["fb"]))
             probes += [("nudge", _cmd_line(a, cm)), ("nudge", _cmd_line(b, cm))]
-    for deg in p.rotate_deg:
-        deg = int(min(max(deg, CMD_MIN["rot"]), CMD_MAX["rot"]))
-        probes += [("nudge", _cmd_line("cw", deg)), ("nudge", _cmd_line("ccw", deg))]
-    if p.reset:
-        clear_samples()
     r = _measure(settle=False)
     if r is None or r["reason"] in ("tag_not_found", "camera_error", "recalibrate"):
         raise HTTPException(status_code=400, detail=f"태그로 위치를 잴 수 없습니다: {r and (r.get('detail') or r['reason'])}")
+    measure_rot = r.get("yaw_deg") is not None and bool(p.rotate_deg)
+    if measure_rot:
+        for deg in p.rotate_deg:
+            deg = int(min(max(deg, CMD_MIN["rot"]), CMD_MAX["rot"]))
+            probes += [("nudge", _cmd_line("cw", deg)), ("nudge", _cmd_line("ccw", deg))]
+    if p.reset:
+        clear_samples(("fb", "lr", "rot") if measure_rot else ("fb", "lr"))   # 안 재는 회전 배율은 남긴다
     with state.lock:
         job = {"kind": "measure", "status": "running", "step": 0, "history": [], "queue": list(probes),
-               "params": p.model_dump(), "started_at": time.time()}
+               "params": p.model_dump(), "measure_rot": measure_rot, "started_at": time.time()}
         state.tag_job = job
         _next_measure(job, r)
-    return {"status": "started", "probes": [l for _, l in probes]}
+    return {"status": "started", "measure_rot": measure_rot, "probes": [l for _, l in probes]}
 
 
 def _require_idle_at_home(obstacle):
@@ -461,7 +527,7 @@ def job_done(j: JobDone):
         with state.lock:
             _finish(job, job.get("before"), False, f"esp32:{j.reply}")
         return {"status": "failed"}
-    r = _measure(settle=True)
+    r = _measure(settle=True, cell=job.get("cell"))
     with state.lock:
         if state.tag_job is not job:                  # 그 사이 '시작점에 놓기' 등으로 취소됨
             return {"status": "cancelled"}
@@ -537,5 +603,6 @@ def status():
         "last_job": getattr(state, "tag_last_job", None),
         "last_measure": getattr(state, "tag_last_measure", None),
         "home_check": getattr(state, "home_check", None),
+        "dest_check": getattr(state, "dest_check", None),
         "nudge_model": {g: nudge_model(g) for g in ("fb", "lr", "rot")},
     }

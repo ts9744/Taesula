@@ -25,10 +25,9 @@ YAW_TOL_DEG = 3.0         # 이만큼까지 틀어진 건 정상 (틀어짐을 �
 SINGLE_PNP_MIN_PX = 120   # 태그 1개만 보일 때 이 크기(px) 이상이면 그 태그 하나로 틀어짐까지 푼다
 EDGE_MARGIN_PX = 8        # 화면 가장자리에서 이만큼 안쪽에 있어야 쓴다
 # 태그가 한 판(같은 평면)에 좁게 모여 있고 멀리 있으면(홈이 아랫줄) PnP 의 틀어짐(yaw)과 좌우 위치가 서로 구분이 안 된다.
-#   예: 태그 간격이 2cm 어긋나거나 렌즈 왜곡이 있으면 yaw 24도 + 좌우 -40cm 같은 답이 나온다.
-# 그래서 PnP 결과는 '태그 1개 방식(크기 = 거리, 화면 위치 = 좌우)'과 비교해서 비슷할 때만 쓴다.
-PNP_MAX_YAW_DEG = 10.0    # PnP yaw 가 이보다 크면 믿지 않는다
-PNP_MAX_DIFF_CM = 5.0     # PnP 위치가 태그 1개 방식과 이보다 다르면 믿지 않는다
+#   예: 153cm 밖 5cm 태그(약 62px)는 태그 간격이 2cm 어긋나거나 렌즈 왜곡이 있으면 yaw 24도 + 좌우 -40cm 같은 답이 나온다.
+# 그래서 PnP 는 가장 큰 태그가 SINGLE_PNP_MIN_PX 이상으로 보일 때(가까워서 태그 안의 원근이 보일 때)만 쓴다.
+# 각도 크기로는 거르지 않는다 (실제로 10도 넘게 돌아갔을 수도 있으므로). 작으면 태그 1개 방식 + yaw 없음.
 TAG_PITCH_CM = 17.0       # 태그 간격. 34 = 열마다 1개 (ID = 열 번호)
                           # 17 = 반 칸마다 1개 (짝수 ID = 열 가운데, 홀수 ID = 열 경계). 카메라를 세로로 쓰면 17 권장
 
@@ -166,22 +165,17 @@ def locate(tags, ref, cols):
     if not known or ref is None:
         return None
     yaw = None
-    t = min(known, key=lambda k: abs(k["cx"] - ref["cx0"]))   # 화면 가운데에 가장 가까운(정면) 태그
-    sx, sy = _locate_single(t, ref)
-    if len({k["id"] for k in known}) >= 2:
-        res = _locate_pnp(known, ref)
-    else:
-        big = max(known, key=lambda k: k["size_px"])
-        res = _locate_pnp([big], ref) if big["size_px"] >= SINGLE_PNP_MIN_PX else None
-    if res is not None and (abs(res[2]) > PNP_MAX_YAW_DEG
-                            or math.hypot(res[0] - sx, res[1] - sy) > PNP_MAX_DIFF_CM):
-        res = None                                   # 태그 1개 방식과 크게 다르면 PnP 가 잘못 푼 것
+    big = max(known, key=lambda k: k["size_px"])
+    res = None
+    if big["size_px"] >= SINGLE_PNP_MIN_PX:          # 가까울 때만 PnP (멀면 yaw/좌우가 구분 안 됨)
+        res = _locate_pnp(known, ref) if len({k["id"] for k in known}) >= 2 else _locate_pnp([big], ref)
     if res is not None:
         x, y, yaw = res
         method = "pnp" if len({k["id"] for k in known}) >= 2 else "pnp_single"
         used = sorted({k["id"] for k in known}) if method == "pnp" else [big["id"]]
     else:
-        x, y = sx, sy
+        t = min(known, key=lambda k: abs(k["cx"] - ref["cx0"]))   # 화면 가운데에 가장 가까운(정면) 태그
+        x, y = _locate_single(t, ref)
         method, used = "single", [t["id"]]
     cell = [int(math.floor(x / CELL_CM)), int(math.floor(y / CELL_CM))]
     cxm, cym = cell_center_cm(cell)
