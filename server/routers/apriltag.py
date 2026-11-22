@@ -67,6 +67,17 @@ YAWLESS_MAX_LR_CM = 8.0
 MIN_SCALE, MAX_SCALE = 0.3, 3.0                 # 배율이 이 밖이면 측정이 잘못된 것으로 보고 무시
 MAX_SAMPLES = 30
 
+# ---------- 두 거리 측정으로 틀어짐(yaw) 구하기 (실험) ----------
+# 먼 칸에서 태그 1개 방식은 yaw 를 0 으로 보고 x 를 낸다: x_s = (카메라 x) + yaw x d  (d = 렌즈 -> 태그)
+# 같은 열에서 앞뒤로만 움직인 두 측정이 있으면 (좌우 위치와 yaw 가 그대로라고 보고) 둘을 푼다
+#   yaw = (x_s1 - x_s2) / (d1 - d2),   카메라 x = x_s - yaw x d,   로봇 x = 카메라 x - CAMERA_OFFSET_CM x yaw
+# 앞 측정이 PnP(가까운 칸)라 yaw 를 이미 알면, 그 yaw 를 그대로 가져와 x 만 푼다 (yaw_carry)
+# 옆이동/회전/모든 raw(nudge 포함, 짧은 이동은 휜다) 명령을 내보내면 앞 측정을 버린다
+# 켜 두면 FAR_YAW 는 쓰지 않는다 (둘 다 먼 칸 yaw 를 만드는 방법이라)
+YAW2 = True
+YAW2_MIN_DD_CM = 30.0      # 두 측정의 거리 차가 이보다 작으면 풀지 않는다 (1칸 = 34cm)
+YAW2_MAX_DEG = 15.0        # 이보다 큰 yaw 가 나오면 계산이 잘못된 것으로 보고 버린다
+
 
 def capture():
     """카메라 프레임. 테스트에서 바꿔 끼울 수 있게 함수로 둔다."""
@@ -192,9 +203,57 @@ def _measure(settle=True, cell=None, far_yaw=True):
     if not _same_frame(ref, frame):
         return {"ok": False, "reason": "recalibrate", "detail": _frame_msg(ref, frame), "error_cm": None,
                 "yaw_deg": None, "located": None, "home": _app(home)}
-    r = tagmod.check_home(tagmod.detect_tags(frame), ref, home, _cols(), far_yaw=far_yaw)
+    use2 = YAW2 and far_yaw                       # 이동 거리 측정(far_yaw=False)에는 쓰지 않는다
+    r = tagmod.check_home(tagmod.detect_tags(frame), ref, home, _cols(), far_yaw=far_yaw and not YAW2)
+    if use2:
+        r = _yaw2(r, home)
     r["home"] = _app(home)
     return r
+
+
+def yaw2_forget():
+    """옆이동/회전/raw 명령을 내보낼 때, '시작점에 놓기' 때 부른다 (앞 측정과 좌우/yaw 가 달라졌을 수 있음)"""
+    state.yaw2_obs = None
+
+
+def _yaw2(r, cell):
+    """r(한 장 측정)에 앞 측정을 더해 yaw 와 x 를 다시 구한다. 새 측정은 다음을 위해 남긴다."""
+    import math
+    loc = r.get("located")
+    if not loc:
+        return r
+    d = loc["y_cm"] + tagmod.TAG_GAP_CM - tagmod.CAMERA_OFFSET_CM
+    col = cell[0]
+    with state.lock:
+        prev = getattr(state, "yaw2_obs", None)
+        if loc.get("yaw_deg") is not None:           # PnP: yaw 를 이미 잰 측정
+            state.yaw2_obs = {"col": col, "d": d, "x": loc["x_cm"], "yaw": math.radians(loc["yaw_deg"])}
+            return r
+        x_s = loc["x_cm"]
+        obs = {"col": col, "d": d, "x_s": x_s, "yaw": None}
+        res = None
+        if prev and prev["col"] == col:
+            if prev["yaw"] is not None:
+                psi, method = prev["yaw"], "yaw_carry"
+            elif abs(prev["d"] - d) >= YAW2_MIN_DD_CM:
+                psi, method = (prev["x_s"] - x_s) / (prev["d"] - d), "yaw2"
+            else:
+                psi = None
+            if psi is not None and abs(math.degrees(psi)) <= YAW2_MAX_DEG:
+                x = (x_s - psi * d) - tagmod.CAMERA_OFFSET_CM * psi
+                res = (x, psi, method)
+        if res is None:
+            state.yaw2_obs = obs
+            return r
+        x, psi, method = res
+        state.yaw2_obs = {"col": col, "d": d, "x": x, "yaw": psi}
+    yaw = round(math.degrees(psi), 1)
+    hx, _ = tagmod.cell_center_cm(cell)
+    dx, dy = round(x - hx, 1), r["error_cm"][1]
+    ok = abs(dx) <= tagmod.HOME_TOL_CM and abs(dy) <= tagmod.HOME_TOL_CM and abs(yaw) <= tagmod.YAW_TOL_DEG
+    loc = dict(loc, x_cm=round(x, 1), yaw_deg=yaw, method=method, offset_cm=[dx, loc["offset_cm"][1]])
+    print(f"[apriltag] {method}: single x {x_s:.1f} -> {x:.1f}, yaw {yaw}", flush=True)
+    return dict(r, ok=ok, reason="ok" if ok else "misaligned", error_cm=[dx, dy], yaw_deg=yaw, located=loc)
 
 
 def _frame_size(frame):
@@ -491,6 +550,7 @@ def clear_home_check():
     state.home_misaligned = False
     state.tag_job = None
     state.route_checked_key = None
+    state.yaw2_obs = None
 
 
 # ---------- 이동 거리 측정 ----------

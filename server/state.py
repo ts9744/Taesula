@@ -29,6 +29,7 @@ tag_last_measure = None   # 마지막으로 '시작점에 놓기'를 한 시각 
 route_check = None        # 마지막 결과
 route_checking = False    # 사진 찍는 중: /next-command 가 잠깐 대기를 돌려준다
 route_checked_key = None  # 이미 확인한 (위치, 남은 경로) - 보정 뒤 같은 자리에서 다시 찍지 않게
+yaw2_obs = None           # 두 거리 yaw 계산용 마지막 측정 (apriltag._yaw2)
 
 # 배송 대기열: 배송·복귀 중에 인식된 물품은 여기 쌓였다가,
 # 로봇이 시작점에 돌아오면 먼저 인식된 순서대로 시작점에서 출발한다.
