@@ -85,17 +85,12 @@ def _next_command():
 
     # AprilTag 보정/측정용 명령 (nudge 등): 그대로 ESP32 로 보낸다. DB 위치는 바꾸지 않는다
     if isinstance(command, str) and command.startswith("raw:"):
-        from server.routers import apriltag
-        apriltag.yaw2_forget()                     # nudge/rotate 는 좌우 위치나 yaw 를 바꾼다
         line = command[4:]
         state.current_command = "raw"
         state.current_steps = 0
         return {"direction": "raw", "steps": 0, "line": line, "expect": f"DONE {line}",
                 "remaining_path": state.current_path}
 
-    if command in ("left", "right"):
-        from server.routers import apriltag
-        apriltag.yaw2_forget()                     # 열이 바뀐다
     if command in MOVE_DELTA:
         while state.current_path and state.current_path[0] == command:
             state.current_path.pop(0)

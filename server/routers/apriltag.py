@@ -67,16 +67,21 @@ YAWLESS_MAX_LR_CM = 8.0
 MIN_SCALE, MAX_SCALE = 0.3, 3.0                 # 배율이 이 밖이면 측정이 잘못된 것으로 보고 무시
 MAX_SAMPLES = 30
 
-# ---------- 두 거리 측정으로 틀어짐(yaw) 구하기 (실험) ----------
-# 먼 칸에서 태그 1개 방식은 yaw 를 0 으로 보고 x 를 낸다: x_s = (카메라 x) + yaw x d  (d = 렌즈 -> 태그)
-# 같은 열에서 앞뒤로만 움직인 두 측정이 있으면 (좌우 위치와 yaw 가 그대로라고 보고) 둘을 푼다
-#   yaw = (x_s1 - x_s2) / (d1 - d2),   카메라 x = x_s - yaw x d,   로봇 x = 카메라 x - CAMERA_OFFSET_CM x yaw
-# 앞 측정이 PnP(가까운 칸)라 yaw 를 이미 알면, 그 yaw 를 그대로 가져와 x 만 푼다 (yaw_carry)
-# 옆이동/회전/모든 raw(nudge 포함, 짧은 이동은 휜다) 명령을 내보내면 앞 측정을 버린다
-# 켜 두면 FAR_YAW 는 쓰지 않는다 (둘 다 먼 칸 yaw 를 만드는 방법이라)
-YAW2 = True
-YAW2_MIN_DD_CM = 30.0      # 두 측정의 거리 차가 이보다 작으면 풀지 않는다 (1칸 = 34cm)
-YAW2_MAX_DEG = 15.0        # 이보다 큰 yaw 가 나오면 계산이 잘못된 것으로 보고 버린다
+# ---------- 엔코더로 틀어짐(yaw) 따라가기 (HEAD) ----------
+# 먼 칸에서 태그 1개 방식은 '좌우 밀림'과 '틀어짐'을 구분하지 못한다: x_s = 로봇 x + yaw x (렌즈~태그 거리 + CAMERA_OFFSET)
+# 그래서 서버가 yaw 를 따로 따라간다 (state.head_deg, 동쪽(시계) +):
+#   - '시작점에 놓기' / 기준 등록 때 0
+#   - 이동/nudge 가 끝날 때마다 ESP32 의 HEAD 줄(바퀴 펄스 차이)을 도로 바꿔 더한다 (/robot/odom)
+#   - rotate 가 끝나면 명령한 각도를 더한다
+#   - PnP(가까운 칸)로 yaw 를 재면 그 값으로 맞춘다
+# 먼 칸 측정에는 이 yaw 를 넣어 좌우를 다시 계산한다 -> maybe_rotated 없이 회전/좌우를 따로 고친다
+# 켜 두면 FAR_YAW 는 쓰지 않는다. 이동 거리 측정에는 쓰지 않는다
+HEAD_TRACK = True
+HEAD_LR_PULSES_PER_DEG = 17.1   # 앞뒤 이동의 HEAD L-R 값 / 도 (제자리 1도 = ROTATE_PULSES_PER_DEG 8.54 x 2)
+HEAD_FR_PULSES_PER_DEG = 17.1   # 좌우 이동의 HEAD F-R 값 / 도 (실측으로 맞출 것: right 6 / left 6 후 눈으로 잰 각도)
+HEAD_MAX_DEG = 15.0             # 따라간 yaw 가 이보다 크면 믿지 않는다 (예전처럼 태그 1개 방식)
+# 부호: 앞으로 갈 때 왼쪽이 더 가면 오른쪽(시계)으로 돈다. 뒤로 가면 반대. 오른쪽 이동 때 앞이 더 가면 시계, 왼쪽 이동이면 반대
+HEAD_SIGN = {"forward": 1, "backward": -1, "right": 1, "left": -1}
 
 
 def capture():
@@ -203,57 +208,69 @@ def _measure(settle=True, cell=None, far_yaw=True):
     if not _same_frame(ref, frame):
         return {"ok": False, "reason": "recalibrate", "detail": _frame_msg(ref, frame), "error_cm": None,
                 "yaw_deg": None, "located": None, "home": _app(home)}
-    use2 = YAW2 and far_yaw                       # 이동 거리 측정(far_yaw=False)에는 쓰지 않는다
-    r = tagmod.check_home(tagmod.detect_tags(frame), ref, home, _cols(), far_yaw=far_yaw and not YAW2)
-    if use2:
-        r = _yaw2(r, home)
+    use_h = HEAD_TRACK and far_yaw                # 이동 거리 측정(far_yaw=False)에는 쓰지 않는다
+    r = tagmod.check_home(tagmod.detect_tags(frame), ref, home, _cols(), far_yaw=far_yaw and not HEAD_TRACK)
+    if use_h:
+        r = _apply_head(r, home)
     r["home"] = _app(home)
     return r
 
 
-def yaw2_forget():
-    """옆이동/회전/raw 명령을 내보낼 때, '시작점에 놓기' 때 부른다 (앞 측정과 좌우/yaw 가 달라졌을 수 있음)"""
-    state.yaw2_obs = None
+def head_reset(deg=0.0):
+    """'시작점에 놓기' / 기준 등록 때 0 으로 (로봇을 사람이 똑바로 놓았다고 본다). None = 모름"""
+    state.head_deg = deg
 
 
-def _yaw2(r, cell):
-    """r(한 장 측정)에 앞 측정을 더해 yaw 와 x 를 다시 구한다. 새 측정은 다음을 위해 남긴다."""
+def head_add(deg, why=""):
+    if getattr(state, "head_deg", None) is None:
+        return
+    state.head_deg += deg
+    print(f"[apriltag] head {deg:+.1f} ({why}) -> {state.head_deg:.1f}", flush=True)
+
+
+def _apply_head(r, cell):
+    """PnP 면 그 yaw 로 head 를 맞추고, 태그 1개 방식이면 head 로 좌우를 다시 계산한다."""
     import math
     loc = r.get("located")
     if not loc:
         return r
-    d = loc["y_cm"] + tagmod.TAG_GAP_CM - tagmod.CAMERA_OFFSET_CM
-    col = cell[0]
     with state.lock:
-        prev = getattr(state, "yaw2_obs", None)
-        if loc.get("yaw_deg") is not None:           # PnP: yaw 를 이미 잰 측정
-            state.yaw2_obs = {"col": col, "d": d, "x": loc["x_cm"], "yaw": math.radians(loc["yaw_deg"])}
+        if loc.get("yaw_deg") is not None:              # PnP: 실제로 잰 yaw
+            state.head_deg = float(loc["yaw_deg"])
             return r
-        x_s = loc["x_cm"]
-        obs = {"col": col, "d": d, "x_s": x_s, "yaw": None}
-        res = None
-        if prev and prev["col"] == col:
-            if prev["yaw"] is not None:
-                psi, method = prev["yaw"], "yaw_carry"
-            elif abs(prev["d"] - d) >= YAW2_MIN_DD_CM:
-                psi, method = (prev["x_s"] - x_s) / (prev["d"] - d), "yaw2"
-            else:
-                psi = None
-            if psi is not None and abs(math.degrees(psi)) <= YAW2_MAX_DEG:
-                x = (x_s - psi * d) - tagmod.CAMERA_OFFSET_CM * psi
-                res = (x, psi, method)
-        if res is None:
-            state.yaw2_obs = obs
-            return r
-        x, psi, method = res
-        state.yaw2_obs = {"col": col, "d": d, "x": x, "yaw": psi}
-    yaw = round(math.degrees(psi), 1)
+        head = getattr(state, "head_deg", None)
+    if head is None or abs(head) > HEAD_MAX_DEG:
+        return r
+    psi = math.radians(head)
+    d = loc["y_cm"] + tagmod.TAG_GAP_CM - tagmod.CAMERA_OFFSET_CM          # 렌즈 -> 태그
+    x = loc["x_cm"] - psi * (d + tagmod.CAMERA_OFFSET_CM)
+    yaw = round(head, 1)
     hx, _ = tagmod.cell_center_cm(cell)
     dx, dy = round(x - hx, 1), r["error_cm"][1]
     ok = abs(dx) <= tagmod.HOME_TOL_CM and abs(dy) <= tagmod.HOME_TOL_CM and abs(yaw) <= tagmod.YAW_TOL_DEG
-    loc = dict(loc, x_cm=round(x, 1), yaw_deg=yaw, method=method, offset_cm=[dx, loc["offset_cm"][1]])
-    print(f"[apriltag] {method}: single x {x_s:.1f} -> {x:.1f}, yaw {yaw}", flush=True)
+    print(f"[apriltag] head: single x {loc['x_cm']:.1f} -> {x:.1f}, yaw {yaw}", flush=True)
+    loc = dict(loc, x_cm=round(x, 1), yaw_deg=yaw, method="head", offset_cm=[dx, loc["offset_cm"][1]])
     return dict(r, ok=ok, reason="ok" if ok else "misaligned", error_cm=[dx, dy], yaw_deg=yaw, located=loc)
+
+
+class Odom(BaseModel):
+    command: str     # ESP32 로 보낸 줄 (forward 3 / nudge left 4 ...)
+    axis: str        # "LR" (앞뒤 이동) / "FR" (좌우 이동)
+    pulses: float    # HEAD 줄의 값
+
+
+@router.post("/robot/odom")
+def odom(o: Odom):
+    """브리지가 이동/nudge 를 끝낼 때마다 부른다. 바퀴 펄스 차이를 틀어짐으로 바꿔 head 에 더한다."""
+    parts = o.command.split()
+    d = parts[1] if parts and parts[0] == "nudge" and len(parts) > 1 else (parts[0] if parts else "")
+    sign = HEAD_SIGN.get(d)
+    if sign is None:
+        return {"status": "ignored"}
+    per = HEAD_FR_PULSES_PER_DEG if o.axis == "FR" else HEAD_LR_PULSES_PER_DEG
+    with state.lock:
+        head_add(sign * o.pulses / per, o.command)
+        return {"status": "ok", "head_deg": getattr(state, "head_deg", None)}
 
 
 def _frame_size(frame):
@@ -550,7 +567,7 @@ def clear_home_check():
     state.home_misaligned = False
     state.tag_job = None
     state.route_checked_key = None
-    state.yaw2_obs = None
+    head_reset(0.0)
 
 
 # ---------- 이동 거리 측정 ----------
@@ -677,6 +694,10 @@ def job_done(j: JobDone):
         with state.lock:
             _finish(job, job.get("before"), False, f"esp32:{j.reply}")
         return {"status": "failed"}
+    p0 = job.get("pending") or {}
+    if p0.get("grp") == "rot" and p0.get("cmd"):            # 찍기 전에 돌린 각도를 head 에 넣는다
+        with state.lock:
+            head_add(p0["cmd"] if p0.get("dir") == "cw" else -p0["cmd"], f"rotate {p0.get('dir')}")
     r = _measure(settle=True, cell=job.get("cell"), far_yaw=job.get("kind") != "measure")
     with state.lock:
         if state.tag_job is not job:                  # 그 사이 '시작점에 놓기' 등으로 취소됨
@@ -687,7 +708,8 @@ def job_done(j: JobDone):
              "want": pend.get("want"), "moved": None if moved is None else round(moved, 1),
              "error_after_cm": r and r.get("error_cm"), "yaw_after": r and r.get("yaw_deg")}
         job["history"].append(h)
-        if h["kind"] == "nudge" and moved is not None and pend.get("cmd"):
+        head_rot = pend.get("grp") == "rot" and ((r or {}).get("located") or {}).get("method") == "head"
+        if h["kind"] == "nudge" and moved is not None and pend.get("cmd") and not head_rot:
             add_sample(pend["grp"], pend["cmd"], moved)
         print(f"[apriltag] {h['kind']} {h['dir']} {h['cmd'] or ''} -> moved {h['moved']} "
               f"(want {h['want']}) error={h['error_after_cm']} yaw={h['yaw_after']}", flush=True)

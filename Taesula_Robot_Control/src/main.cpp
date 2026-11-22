@@ -342,6 +342,7 @@ void printAllDistances();
 void encReset();
 void printEncoder(int mode);   // 0 = 전진, 1 = right, 2 = left, 3 = 후진
 void printTurn(const unsigned long *atBrake, bool strafe);
+void printHead(bool strafe);
 void syncCompute();
 long encAvg();
 void rotateInPlace(int deg);
@@ -993,6 +994,7 @@ RunResult runTimed(
   for (int i = 0; i < ENC_COUNT; i++) atBrake[i] = encCount[i];
   stopMotor();
   delay(100);   // 멈춘 뒤 관성 정리
+  printHead(action == strafeLeft || action == strafeRight);   // 서버가 틀어짐(yaw)을 따라가는 데 쓴다 (debug 와 상관없이 항상)
   if (PRINT_ENCODER) printTurn(atBrake, action == strafeLeft || action == strafeRight);
 
   if (encMode) {
@@ -1301,6 +1303,22 @@ void printEncoder(int mode) {
 
 
 // 이동 한 번에 생긴 좌우(또는 앞뒤) 바퀴 펄스 차이 -> cm, 각도 어림
+// [2026-11-23] 이동/nudge 가 끝날 때마다 한 줄: HEAD L-R <펄스> (앞뒤) / HEAD F-R <펄스> (좌우)
+//   값은 TURN 의 end 와 같다 = (왼쪽 2바퀴 - 오른쪽 2바퀴) / 2, 좌우 이동이면 (앞 2바퀴 - 뒤 2바퀴) / 2
+//   서버(apriltag.py HEAD_*)가 방향에 따라 부호를 붙이고 도로 바꿔 누적한다 (제자리 1도 = 약 17펄스)
+//   브리지는 DONE 앞에 오는 이 줄을 읽어 /robot/odom 으로 보낸다
+void printHead(bool strafe) {
+  unsigned long c[ENC_COUNT];
+  for (int i = 0; i < ENC_COUNT; i++) c[i] = encCount[i];
+  if (c[0] == 0 || c[1] == 0 || c[2] == 0 || c[3] == 0) return;   // 엔코더 빠진 바퀴가 있으면 보내지 않는다
+  long d = strafe ? ((long)c[0] + (long)c[1] - (long)c[2] - (long)c[3])
+                  : ((long)c[0] + (long)c[2] - (long)c[1] - (long)c[3]);
+  Serial.println();
+  Serial.print(strafe ? "HEAD F-R " : "HEAD L-R ");
+  Serial.println(d / 2.0f, 1);
+}
+
+
 void printTurn(const unsigned long *atBrake, bool strafe) {
   unsigned long c[ENC_COUNT];
   for (int i = 0; i < ENC_COUNT; i++) c[i] = encCount[i];

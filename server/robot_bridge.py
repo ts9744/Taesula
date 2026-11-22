@@ -29,6 +29,20 @@ link = {"connected": False, "message": MSG_NOT_CONNECTED}
 class SerialLost(Exception):
     pass
 
+
+# ESP32 가 이동/nudge 끝에 보내는 'HEAD L-R <펄스>' / 'HEAD F-R <펄스>' (send_and_wait 가 채운다)
+last_head = {"axis": None, "pulses": None}
+
+
+def post_odom(line):
+    """방금 끝낸 명령의 좌우(앞뒤) 바퀴 차이를 서버에 보낸다. 서버는 이걸로 틀어짐을 따라간다."""
+    if last_head["axis"] is None:
+        return
+    try:
+        api_post("/robot/odom", {"command": line, "axis": last_head["axis"], "pulses": last_head["pulses"]})
+    except requests.RequestException as e:
+        print("odom report error:", e)
+
 class Resume(Exception):
     """halt 후 '시작점에 놓기'가 확인되어 다시 시작한다."""
     pass
@@ -102,6 +116,7 @@ def send_and_wait(ser, line, expect, timeout):
     반환: "ok" / "err" / "timeout"
     연결이 끊기면 SerialLost 발생
     """
+    last_head["axis"] = last_head["pulses"] = None
     try:
         ser.reset_input_buffer()
         ser.write((line + "\n").encode())
@@ -113,6 +128,13 @@ def send_and_wait(ser, line, expect, timeout):
             if not reply:
                 continue
             print("ESP32:", reply)
+            if reply.startswith("HEAD "):
+                try:
+                    _, axis, val = reply.split()
+                    last_head["axis"], last_head["pulses"] = ("FR" if axis == "F-R" else "LR"), float(val)
+                except ValueError:
+                    pass
+                continue
             if reply == expect:
                 return "ok"
             if reply.startswith("OBSTACLE"):
@@ -218,6 +240,8 @@ def run(ser):
                 result = send_and_wait(ser, line, expect, RAW_TIMEOUT_SEC)
             except SerialLost:
                 halt(None, f"'{line}' 중 ESP32 연결 끊김")
+            if result == "ok":
+                post_odom(line)
             try:
                 api_post("/apriltag/job-done", {"ok": result == "ok", "reply": str(result)})
             except requests.RequestException as e:
@@ -255,6 +279,9 @@ def run(ser):
         except SerialLost:
             # 이동 도중 끊김: 실제로 몇 칸 갔는지 알 수 없다
             halt(None, f"'{line}' 이동 중 ESP32 연결 끊김")
+
+        if result == "ok":
+            post_odom(line)
 
         if result.startswith("OBSTACLE"):
             if not report_obstacle(result):
