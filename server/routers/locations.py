@@ -138,7 +138,7 @@ def delete_location(location_id: int):
         if linked_item:
             raise HTTPException(
                 status_code=400,
-                detail="해당 location을 목적지로 사용하는 item이 있어 삭제할 수 없습니다."
+                detail="해당 위치를 목적지로 사용하는 물품이 있어 삭제할 수 없습니다."
             )
 
         cursor.execute(
