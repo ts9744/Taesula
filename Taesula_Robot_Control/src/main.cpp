@@ -171,6 +171,10 @@ const bool RETURN_TO_CENTER = true;
 const unsigned long RETURN_TRIM_MS = 100;    // 복귀 감속 구간에서 더 가는 만큼 빼기
 const unsigned long RETURN_MIN_MS  = 60;     // 이보다 짧으면 복귀 안 함
 
+// 다음 칸 중앙까지 이만큼(ms) 이내로 남았는데 장애물에 걸리면 되돌아가지 않고 그 칸 도착으로 처리
+const unsigned long SNAP_FORWARD_MS = 300;   // 약 10cm
+const float SNAP_MIN_GAP_CM = 2.0;           // 다음 칸 중앙에 섰을 때 장애물까지 최소 여유
+
 const int MOTOR_SPEED  = 255;
 const int STRAFE_SPEED = 255;
 
@@ -231,7 +235,8 @@ const float WHEELBASE_CM = 0;   // 앞 바퀴 중심 ~ 뒤 바퀴 중심
 // ===============================
 // 이동 중 장애물 감지
 // ===============================
-const float STOP_DISTANCE_CM = 10.0;            // 이 거리 이하면 정지
+const float STOP_DISTANCE_FB_CM = 15.0;   // 앞/뒤 센서
+const float STOP_DISTANCE_LR_CM = 15.0;   // 좌/우 센서 (칸 중앙에서 옆 칸 경계 10.5cm)
 const unsigned long SENSOR_INTERVAL_MS = 50;    // 이동 중 측정 간격
 const int CONFIRM_COUNT = 2;                    // 연속 2번 이하일 때만 정지 (튀는 값 무시)
 bool PRINT_DISTANCE = false;                    // debug on 으로 켜기 (시연 땐 off)
@@ -765,6 +770,13 @@ void handleLine(String line) {
   unsigned long msInCell  = ranMs % runMs;
 
   if (r == RUN_OBSTACLE) {
+    // 다음 칸 중앙에 거의 도착했으면 복귀하지 않고 그 칸에 선 것으로 처리
+    float remainCm = (float)(runMs - msInCell) * CELL_CM / (float)runMs;
+    if (msInCell + SNAP_FORWARD_MS >= runMs && stopDist - remainCm >= SNAP_MIN_GAP_CM) {
+      cellsDone += 1;
+      msInCell = 0;
+    }
+
     // 칸 중앙으로 복귀: 이번 칸에서 간 만큼 반대로 (센서 확인 없이, 감속 정지)
     if (RETURN_TO_CENTER && msInCell > RETURN_MIN_MS + RETURN_TRIM_MS) {
       void (*back)() = nullptr;
@@ -928,8 +940,9 @@ RunResult runTimed(
         Serial.println(d, 1);
       }
 
-      // 기준 이하가 연속 CONFIRM_COUNT 번이면 정지
-      if (d > 0 && d <= STOP_DISTANCE_CM) {
+       // 기준 이하가 연속 CONFIRM_COUNT 번이면 정지 (앞뒤/좌우 기준 따로)
+      float stopCm = (sensor == S_LEFT || sensor == S_RIGHT) ? STOP_DISTANCE_LR_CM : STOP_DISTANCE_FB_CM;
+      if (d > 0 && d <= stopCm) {
         hits++;
       } else {
         hits = 0;
