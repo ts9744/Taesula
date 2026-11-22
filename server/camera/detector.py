@@ -27,7 +27,7 @@ CLASS_NAMES = [
     "Leg",
 ]
 
-SCORE_THRESHOLD = 0.5
+SCORE_THRESHOLD = 0.3
 
 _hailo = None
 _hailo_lock = Lock()

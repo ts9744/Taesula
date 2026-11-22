@@ -157,6 +157,13 @@ const float ROTATE_PULSES_PER_DEG = 8.54;   // 2026-11-21: rotate 90(target 709)
 const int   ROTATE_SPEED = 200;             // 너무 낮으면 작은 각도에서 안 움직임
 const long  ROTATE_STOP_EARLY = 59;         // 최소 회전 약 7도 x 8.54
 const int   ROTATE_MAX_DEG = 180;
+// [2026-11-22] 작은 각도: 느리게 + STOP_EARLY 를 목표에 비례 (nudge 와 같은 방식)
+//   rotate 3 / 5 / 8 / 12 를 재서: 더 돌면 ROT_SMALL_SE_FRAC 올림, 덜 돌면 내림
+//   안 돌면(바퀴가 버팀) ROTATE_SPEED_SMALL 을 10 씩 올림
+const int   ROTATE_SMALL_DEG   = 15;      // 이 각도 이하는 느린 회전
+const int   ROTATE_SPEED_SMALL = 150;
+const float ROT_SMALL_SE_BASE  = 10.0;
+const float ROT_SMALL_SE_FRAC  = 0.40;
 
 // [팀원 3035c71 반영] 출발 전 장애물 점검
 //   가는 방향 센서로 3번 재서 가운데 값이 BLOCK_DISTANCE_CM 이하면 출발하지 않고
@@ -265,8 +272,9 @@ float baseScale  = 1.0;               // nudge 때만 NUDGE_SPEED_SCALE (감속�
 //         - 바퀴 하나라도 안 돌거나 옆이동이 안 되면 NUDGE_SPEED_SCALE 을 0.05 씩 올림
 //         - 명령보다 더 가면 NUDGE_STOP_EARLY_* 를 올리고, 덜 가면 내림 (1cm 당 약 32펄스)
 const float NUDGE_SPEED_SCALE      = 0.6;
-const long  NUDGE_STOP_EARLY_FWD    = 100;
-const long  NUDGE_STOP_EARLY_STRAFE = 80;
+// STOP_EARLY = BASE + FRAC x 목표펄스 (2026-11-22 실측: 앞 3/6/10cm -> 51/213/410펄스, 오른쪽 -> 103/258/413펄스)
+const float NUDGE_SE_BASE_FWD     = 30.0, NUDGE_SE_FRAC_FWD     = 0.40;
+const float NUDGE_SE_BASE_STRAFE  = 56.0, NUDGE_SE_FRAC_STRAFE  = 0.31;
 void (*currentAction)() = nullptr;    // 지금 실행 중인 이동 (감속할 때 다시 호출)
 
 bool sonarEnabled = true;   // sonar off 로 끌 수 있음. 리셋하면 다시 ON
@@ -281,7 +289,7 @@ bool sonarEnabled = true;   // sonar off 로 끌 수 있음. 리셋하면 다시
 // ===============================
 bool syncEnabled = true;
 const unsigned long SYNC_MS       = 50;    // 보정 주기
-const unsigned long SYNC_START_MS = 150;   // 출발 직후는 보정 안 함 (가속 구간)
+const unsigned long SYNC_START_MS = 150;   // 출발 직후는 보정 안 함 (가속 구간)i
 const float SYNC_KP     = 1.0;             // 펄스 1개 차이당 PWM 몇 만큼 보정
 const int   SYNC_MAX_ADJ = 60;             // 보정 최대치 (PWM)
 int  syncAdj[4] = {0, 0, 0, 0};
@@ -352,16 +360,21 @@ long encAvg() {
 // 제자리 회전 (오른쪽 = 왼쪽 바퀴 전진 + 오른쪽 바퀴 후진)
 void rotateInPlace(int deg) {
   bool cw = (deg > 0);
-  long target = (long)((cw ? deg : -deg) * ROTATE_PULSES_PER_DEG) - ROTATE_STOP_EARLY;
+  int  a  = cw ? deg : -deg;
+  bool small = (a <= ROTATE_SMALL_DEG);
+  int  spd = small ? ROTATE_SPEED_SMALL : ROTATE_SPEED;
+  long full = (long)(a * ROTATE_PULSES_PER_DEG);
+  long target = small ? full - (long)(ROT_SMALL_SE_BASE + ROT_SMALL_SE_FRAC * full)
+                      : full - ROTATE_STOP_EARLY;
   if (target < 1) target = 1;
 
   syncActive = false;
   encReset();
   digitalWrite(LED_PIN, HIGH);
-  driveMotor(FL_IN1, FL_IN2,  cw, FL_INV, ROTATE_SPEED);
-  driveMotor(RL_IN1, RL_IN2,  cw, RL_INV, ROTATE_SPEED);
-  driveMotor(FR_IN1, FR_IN2, !cw, FR_INV, ROTATE_SPEED);
-  driveMotor(RR_IN1, RR_IN2, !cw, RR_INV, ROTATE_SPEED);
+  driveMotor(FL_IN1, FL_IN2,  cw, FL_INV, spd);
+  driveMotor(RL_IN1, RL_IN2,  cw, RL_INV, spd);
+  driveMotor(FR_IN1, FR_IN2, !cw, FR_INV, spd);
+  driveMotor(RR_IN1, RR_IN2, !cw, RR_INV, spd);
 
   unsigned long start = millis();
   unsigned long limit = (unsigned long)target + 1000;          // 엔코더 이상 대비 시간 제한
@@ -530,11 +543,12 @@ void handleLine(String line) {
 
     gRunMs = st ? STRAFE_RUN_MS : FORWARD_RUN_MS;
     gPulsesPerCell = CELL_CM * (st ? PULSES_PER_CM_STRAFE : PULSES_PER_CM_FWD);
-    gStopEarly = st ? NUDGE_STOP_EARLY_STRAFE : NUDGE_STOP_EARLY_FWD;
     unsigned long nms = (unsigned long)((float)cm / CELL_CM * (float)gRunMs);
     if (USE_ENC_DIST) {
-      gTargetPulses = (long)(cm * (st ? PULSES_PER_CM_STRAFE : PULSES_PER_CM_FWD));
-      if (gTargetPulses <= gStopEarly) gTargetPulses = gStopEarly + 1;
+            gTargetPulses = (long)(cm * (st ? PULSES_PER_CM_STRAFE : PULSES_PER_CM_FWD));
+      gStopEarly = (long)(st ? NUDGE_SE_BASE_STRAFE + NUDGE_SE_FRAC_STRAFE * gTargetPulses
+                             : NUDGE_SE_BASE_FWD    + NUDGE_SE_FRAC_FWD    * gTargetPulses);
+      if (gStopEarly > gTargetPulses - 1) gStopEarly = gTargetPulses - 1;
       nms = (unsigned long)(nms * 2 / NUDGE_SPEED_SCALE) + 500;   // 느리게 가므로 시간 한도도 늘린다
     } else {
       gTargetPulses = 0;

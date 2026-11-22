@@ -8,8 +8,8 @@ PERSON_MAX_WAITS 번 연속으로 사람이 보이면 일반 장애물로 처리
 - 카메라는 로봇 앞(격자 북쪽)만 보므로 forward 이동에서만 판단한다.
 - 카메라/YOLO 가 실패하거나 모델에 'Leg' 클래스가 없으면 사람이 아닌 것으로 본다 (지금까지와 같은 동작).
 """
-PERSON_LABEL = "Leg"            # detector.CLASS_NAMES 에 들어갈 이름
-PERSON_MIN_SCORE = 0.5          # 이 점수 이상인 박스만 사람으로 본다
+PERSON_LABELS = ("Leg", "Cone" )           # detector.CLASS_NAMES 에 들어갈 이름
+PERSON_MIN_SCORE = 0.3          # 이 점수 이상인 박스만 사람으로 본다
 PERSON_MIN_HEIGHT_RATIO = 0.2   # 박스 높이가 화면 높이의 이 비율 이상 (멀리 있는 사람은 무시)
 PERSON_WAIT_SEC = 3.0           # 한 번 기다리는 시간
 PERSON_MAX_WAITS = 5            # 연속 대기 최대 횟수 (넘으면 일반 장애물)
@@ -17,7 +17,7 @@ CAMERA_DIRECTIONS = ("forward",)
 
 
 def _is_person(det, frame_h):
-    if det.get("label") != PERSON_LABEL or det.get("score", 0) < PERSON_MIN_SCORE:
+    if det.get("label") != PERSON_LABELS or det.get("score", 0) < PERSON_MIN_SCORE:
         return False
     x1, y1, x2, y2 = det["box"]
     return (y2 - y1) >= frame_h * PERSON_MIN_HEIGHT_RATIO
