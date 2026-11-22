@@ -19,6 +19,9 @@
   - 그동안 state.home_misaligned = True 라 대기열 출발/새 배송은 멈춰 있다
   - 배송지 도착(/command/done 의 arrived) -> after_arrive() 가 같은 방법으로 그 칸 중앙에 맞춘다 (DEST_CHECK)
     배송지 결과는 state.dest_check 에만 남기고 배송을 막지 않는다. 보정 중에는 자동 복귀를 미룬다
+  - 배송/복귀 중 옆이동 전후(ROUTE_CHECK) -> /next-command 가 route_check_hold() 로 잠깐 멈추고 사진을 찍는다
+    어긋났으면 nudge 를 남은 경로 앞에 끼워 넣어 그 칸 중앙에 맞춘 뒤 원래 경로를 이어 간다.
+    태그가 안 보이거나(1행 등) 보정이 안 되면 state.route_check 에 남기고 그대로 간다 (배송을 막지 않는다)
 
 명령 전달: state.current_path 에 "raw:<ESP32 로 보낼 줄>" 을 넣는다.
   /next-command 가 {"direction": "raw", "line", "expect"} 로 내보내고, 브리지는 그대로 보내고 결과를 job-done 으로 알린다.
@@ -42,6 +45,8 @@ SETTLE_SEC = 0.3     # 브레이크 후 흔들림이 멎을 때까지 기다렸�
 # ---------- 자동 보정 설정 ----------
 AUTO_CORRECT = True
 DEST_CHECK = True        # 배송지 도착 때도 위치 확인 + 보정 (False 면 홈 복귀 때만)
+ROUTE_CHECK = True       # 배송/복귀 중 옆이동(left/right) 전후에도 위치 확인 + 보정 (배송은 막지 않는다)
+LATERAL = ("left", "right")
 AUTO_MAX_CM = 20.0       # 이보다 크게 어긋났으면 자동 보정하지 않고 사람을 부른다
 AUTO_MAX_DEG = 15.0
 TARGET_CM = 2.5          # 보정할 때 이 이하로 줄이려고 한다 (끝내는 기준은 HOME_TOL_CM)
@@ -227,8 +232,10 @@ def _drop_raw():
     state.current_path = [c for c in state.current_path if not str(c).startswith("raw:")]
 
 
-def _send_raw(line):
-    state.current_path = [f"raw:{line}"]
+def _send_raw(line, keep_path=False):
+    """keep_path: 남은 배송 경로 앞에 끼워 넣는다 (옆이동 전후 보정). 아니면 경로를 nudge 하나로 바꾼다."""
+    rest = [c for c in state.current_path if not str(c).startswith("raw:")] if keep_path else []
+    state.current_path = [f"raw:{line}"] + rest
 
 
 # ---------- 자동 보정 ----------
@@ -251,13 +258,16 @@ def _too_big(r):
     return max(abs(dx), abs(dy)) > AUTO_MAX_CM or abs(yaw) > AUTO_MAX_DEG
 
 
-def _publish_dest(result):
-    """배송지 확인 결과. 홈과 달리 배송/대기열을 막지 않는다."""
+def _publish_dest(result, where="dest"):
+    """배송지(where="dest") / 옆이동 전후(where="route") 확인 결과. 홈과 달리 배송/대기열을 막지 않는다."""
     r = dict(result)
     if r.get("located"):
         r["located"] = dict(r["located"], cell=_app(r["located"]["cell"]))
     r["checked_at"] = time.time()
-    state.dest_check = r
+    if where == "route":
+        state.route_check = r
+    else:
+        state.dest_check = r
     return r
 
 
@@ -269,12 +279,12 @@ def _finish(job, r, ok, reason=None):
     state.tag_last_job = _job_view(job)
     state.tag_job = None
     _drop_raw()
-    if job.get("where") == "dest":
+    if job.get("where") in ("dest", "route"):
         rr = dict(r or {"error_cm": None, "yaw_deg": None, "located": None})
         if not ok:
             rr["ok"], rr["reason"] = False, reason or rr.get("reason", "misaligned")
-        _publish_dest(rr)
-        print(f"[apriltag] dest job {job['status']} {reason or ''} history={len(job.get('history', []))}", flush=True)
+        _publish_dest(rr, job["where"])
+        print(f"[apriltag] {job['where']} job {job['status']} {reason or ''} history={len(job.get('history', []))}", flush=True)
         return
     if ok:
         _publish(r, False)
@@ -309,9 +319,9 @@ def _next_correction(job, r):
     job["step"] += 1
     job["pending"] = {"kind": "nudge", "dir": d, "grp": grp, "cmd": amt, "want": round(want, 1)}
     job["before"] = r
-    _send_raw(_cmd_line(d, amt))
-    if job.get("where") == "dest":
-        _publish_dest(dict(r, reason="correcting"))       # 배송지 보정은 홈 상태/대기열을 건드리지 않는다
+    _send_raw(_cmd_line(d, amt), keep_path=job.get("where") == "route")
+    if job.get("where") in ("dest", "route"):
+        _publish_dest(dict(r, reason="correcting"), job["where"])   # 홈 상태/대기열을 건드리지 않는다
     else:
         _publish(dict(r, reason="correcting"), True)
 
@@ -391,6 +401,76 @@ def after_arrive():
     return out
 
 
+def _route_check_key(pos):
+    return (tuple(pos), tuple(str(c) for c in state.current_path))
+
+
+def route_check_hold(prev_move):
+    """/next-command 에서 경로를 꺼내기 전에 부른다 (state.lock 안). True 면 이번에는 대기를 돌려준다.
+
+    방금 옆이동을 끝냈거나 다음 이동이 옆이동이면, 사진을 찍어(별도 스레드) 칸 중앙인지 확인한다.
+    어긋났으면 start_correction(where="route") 가 nudge 를 경로 앞에 끼워 넣는다.
+    같은 위치 + 같은 남은 경로는 한 번만 확인한다 (보정이 끝난 뒤 다시 찍지 않게)."""
+    if getattr(state, "route_checking", False):
+        return True
+    if not (ROUTE_CHECK and AUTO_CORRECT) or getattr(state, "tag_job", None) is not None:
+        return False
+    path = state.current_path
+    if not path or str(path[0]).startswith("raw:"):
+        return False
+    from server.routers.command import has_move_command
+    if not has_move_command(path):                # 남은 게 도착 stop 뿐이면 after_arrive / 홈 확인이 맡는다
+        return False
+    if prev_move not in LATERAL and path[0] not in LATERAL:
+        return False
+    from server.routers import obstacle
+    pos = obstacle._robot_pos()
+    if pos is None or load_ref() is None:
+        return False
+    key = _route_check_key(pos)
+    if getattr(state, "route_checked_key", None) == key:
+        return False
+    state.route_checked_key = key
+    state.route_checking = True
+    import threading
+    threading.Thread(target=_route_check_worker, args=(pos, key), daemon=True).start()
+    return True
+
+
+def _route_check_worker(pos, key):
+    r = None
+    try:
+        r = _measure(settle=True, cell=pos)
+    except Exception as e:                        # 카메라 등 예외: 확인 없이 그대로 간다
+        print("[apriltag] route check error:", e, flush=True)
+    finally:
+        with state.lock:
+            state.route_checking = False
+            _route_check_apply(pos, key, r)
+
+
+def _route_check_apply(pos, key, r):
+    from server.routers import obstacle
+    if r is None:
+        return
+    # 사진을 찍는 사이 경로가 바뀌었거나(시작점에 놓기, 재탐색) 다른 보정이 시작됐으면 버린다
+    if getattr(state, "tag_job", None) is not None or obstacle._robot_pos() != tuple(pos) \
+            or _route_check_key(pos) != key:
+        return
+    if r["ok"]:
+        _publish_dest(r, "route")
+    elif AUTO_CORRECT and r["reason"] == "misaligned" and not _too_big(r):
+        start_correction(r, where="route", cell=pos)
+        # 보정 nudge 가 경로 앞에 들어가 key 가 바뀌었다. 보정이 끝나면 경로가 원래대로 돌아오므로 원래 key 로 둔다
+        state.route_checked_key = key
+    else:
+        if r["reason"] == "misaligned" and _too_big(r):
+            r = dict(r, reason="too_far")
+        _publish_dest(r, "route")
+    print(f"[apriltag] route check {tuple(pos)}: {r['reason']} error_cm={r.get('error_cm')} yaw={r.get('yaw_deg')}",
+          flush=True)
+
+
 def after_return_home():
     """/command/done 이 홈 도착을 알린 직후 부른다 (state.lock 밖에서)."""
     return run_home_check(settle=True)
@@ -401,6 +481,7 @@ def clear_home_check():
     state.home_check = None
     state.home_misaligned = False
     state.tag_job = None
+    state.route_checked_key = None
 
 
 # ---------- 이동 거리 측정 ----------
@@ -604,5 +685,6 @@ def status():
         "last_measure": getattr(state, "tag_last_measure", None),
         "home_check": getattr(state, "home_check", None),
         "dest_check": getattr(state, "dest_check", None),
+        "route_check": getattr(state, "route_check", None),
         "nudge_model": {g: nudge_model(g) for g in ("fb", "lr", "rot")},
     }

@@ -39,6 +39,7 @@ def get_next_command():
 
 
 def _next_command():
+    prev_move = getattr(state, "pending_move", None)   # 방금 무사히 끝난 이동 (장애물이면 None)
     obstacle.commit_pending_move()
     obstacle.try_retry()
     home.maybe_auto_return()
@@ -51,6 +52,17 @@ def _next_command():
             "steps": 0,
             "message": "path is empty",
             "waiting": "person",
+            "remaining_path": state.current_path,
+        }
+
+    # 옆이동 전후: AprilTag 로 칸 중앙인지 확인하고, 어긋났으면 nudge 로 맞춘 뒤 출발한다
+    from server.routers import apriltag
+    if apriltag.route_check_hold(prev_move):
+        return {
+            "direction": "stop",
+            "steps": 0,
+            "message": "path is empty",
+            "waiting": "apriltag",
             "remaining_path": state.current_path,
         }
 
