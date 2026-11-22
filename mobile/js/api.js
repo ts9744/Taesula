@@ -152,6 +152,7 @@ export const api = {
   locations: () => request("GET", "/locations"),
   createLocation: (zone_name, x, y) =>
     request("POST", "/locations", { params: { zone_name, x, y } }),
+  deleteLocation: (id) => request("DELETE", `/locations/${enc(id)}`),
   gridMap: () => request("GET", "/grid-map"),
   adminCheck: () => request("GET", "/admin/check", { timeout: 4000 }),
   saveGridMap: (payload) => request("POST", "/grid-map", { json: payload }),

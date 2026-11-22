@@ -1,6 +1,6 @@
 // 격자 생성: 공장 지도 편집 (장애물 · 시작점 · 목적지) 후 서버 DB에 저장
 import { api } from '../api.js';
-import { h, icon, btn, busy, toast, openSheet, field } from '../ui.js';
+import { h, icon, btn, busy, toast, openSheet, field, confirmDialog } from '../ui.js';
 
 const MODES = [
   { id: 'free', label: '이동 가능', swatch: '#FFFFFF' },
@@ -20,6 +20,7 @@ export default {
     let grid = empty(rows, cols);
     let start = null;          // [row, col]
     let labels = {};           // "r,c" -> zone_name
+    let locIds = {};           // "r,c" -> 서버 location id (목적지 삭제용)
     let mode = 'obstacle';
     let dirty = false;
     let updatedAt = null;
@@ -171,7 +172,7 @@ export default {
         obstacle: ' · 끌어서 여러 칸 · 다시 탭하면 지워집니다',
         free: ' · 끌어서 여러 칸을 지웁니다',
         start: ' · 다시 탭하면 해제됩니다',
-        location: ' · 칸을 탭하세요',
+        location: ' · 빈 칸은 등록, 목적지 칸은 삭제',
       }[m];
       // 칠하는 모드에서는 격자 위 드래그가 화면 스크롤이 되지 않도록 막는다
       gridBox.style.touchAction = (m === 'obstacle' || m === 'free') ? 'none' : '';
@@ -251,11 +252,37 @@ export default {
       draw();
     }
 
+    // 이미 등록된 목적지 칸을 누르면: 확인 후 서버에서 삭제 (그 목적지를 쓰는 물품이 있으면 서버가 거절)
+    async function deleteLocation(r, c) {
+      const key = `${r},${c}`;
+      const zone = labels[key] || '';
+      const yes = await confirmDialog({
+        title: '목적지 삭제',
+        message: `${zone} 목적지(좌표 ${c + 1}, ${r + 1})를 삭제할까요? 이 목적지로 등록된 물품이 있으면 삭제되지 않습니다.`,
+        yes: '삭제', no: '취소',
+      });
+      if (!yes || !alive) return;
+      try {
+        let id = locIds[key];
+        if (id == null) {   // 이 화면에서 방금 등록해 id 를 모르는 경우 서버 목록에서 찾는다
+          const l = (await api.locations()).find((it) => it.x === c + 1 && it.y === r + 1);
+          id = l && l.id;
+        }
+        if (id == null) { toast('서버에서 이 목적지를 찾지 못했습니다. 새로고침 후 다시 시도하세요.', 'error'); return; }
+        await api.deleteLocation(id);
+        grid[r][c] = 0; delete labels[key]; delete locIds[key];
+        draw();
+        toast(`${zone} 목적지를 삭제했습니다.`, 'ok');
+      } catch (e) {
+        toast(e.message, 'error');   // 예: 해당 location을 목적지로 사용하는 item이 있어 삭제할 수 없습니다.
+      }
+    }
+
     function registerLocation(r, c) {
       const v = grid[r][c];
       if (v === 1) { toast('장애물 칸에는 목적지를 등록할 수 없습니다.', 'error'); return; }
       if (v === 2) { toast('시작점 칸에는 목적지를 등록할 수 없습니다.', 'error'); return; }
-      if (v === 3) { toast(`이미 목적지(${labels[`${r},${c}`] || ''})로 등록된 칸입니다.`, 'error'); return; }
+      if (v === 3) { deleteLocation(r, c); return; }
       const x = c + 1, y = r + 1;
       const input = h('input', { class: 'input', placeholder: '예: A-1', autocomplete: 'off', maxLength: 20 });
       const ok = btn('목적지 저장', { kind: 'primary', block: true, type: 'submit' });
@@ -266,8 +293,9 @@ export default {
         if (!zone) { toast('구역 이름을 입력하세요.', 'error'); return; }
         busy(ok, async () => {
           try {
-            await api.createLocation(zone, x, y);
+            const res = await api.createLocation(zone, x, y);
             grid[r][c] = 3; labels[`${r},${c}`] = zone;
+            if (res && res.id != null) locIds[`${r},${c}`] = res.id;
             close(); draw();
             toast(`${zone} 목적지를 서버에 저장했습니다. 좌표 (${x}, ${y})`, 'ok');
           } catch (e) {
@@ -302,12 +330,13 @@ export default {
     }
 
     function applyLocations(locs) {
-      labels = {};
+      labels = {}; locIds = {};
       for (const l of locs) {
         const r = l.y - 1, c = l.x - 1;
         if (r >= 0 && r < rows && c >= 0 && c < cols && grid[r][c] !== 1 && grid[r][c] !== 2) {
           grid[r][c] = 3;
           labels[`${r},${c}`] = l.zone_name;
+          locIds[`${r},${c}`] = l.id;
         }
       }
     }

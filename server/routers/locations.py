@@ -19,10 +19,11 @@ def create_location(zone_name: str, x: int, y: int):
         (zone_name, x, y)
     )
 
+    location_id = cursor.lastrowid
     conn.commit()
     conn.close()
 
-    return {"message": "location created"}
+    return {"message": "location created", "id": location_id}
 
 
 @router.get("/locations")
