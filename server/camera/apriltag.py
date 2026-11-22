@@ -28,6 +28,14 @@ EDGE_MARGIN_PX = 8        # 화면 가장자리에서 이만큼 안쪽에 있어
 #   예: 153cm 밖 5cm 태그(약 62px)는 태그 간격이 2cm 어긋나거나 렌즈 왜곡이 있으면 yaw 24도 + 좌우 -40cm 같은 답이 나온다.
 # 그래서 PnP 는 가장 큰 태그가 SINGLE_PNP_MIN_PX 이상으로 보일 때(가까워서 태그 안의 원근이 보일 때)만 쓴다.
 # 각도 크기로는 거르지 않는다 (실제로 10도 넘게 돌아갔을 수도 있으므로). 작으면 태그 1개 방식 + yaw 없음.
+# [2026-11-22] 멀리 있을 때 틀어짐(yaw) 추정
+#   멀면 태그 하나로 '좌우로 밀림'과 '틀어짐'을 구분할 수 없다 (둘 다 태그가 화면에서 옆으로 가 보인다).
+#   그런데 150cm 에서 3도 틀어지면 태그가 8cm 옆으로 밀린 것처럼 보이고, 반대로 3cm 밀려도 1도밖에 안 된다.
+#   그래서 멀 때(FAR_YAW_CM 이상)는 태그가 옆으로 보이는 것을 '틀어짐'으로 읽고, 좌우 위치는 기대한 칸 중앙으로 둔다.
+#   (예전엔 이걸 좌우 밀림으로 읽어 nudge 로 옆으로 움직여서, 틀어짐은 그대로 두고 위치만 더 틀어졌다)
+FAR_YAW = True
+FAR_YAW_CM = 80.0         # 렌즈 -> 태그 거리가 이 이상이면 멀다고 본다
+
 TAG_PITCH_CM = 17.0       # 태그 간격. 34 = 열마다 1개 (ID = 열 번호)
                           # 17 = 반 칸마다 1개 (짝수 ID = 열 가운데, 홀수 ID = 열 경계). 카메라를 세로로 쓰면 17 권장
 
@@ -152,7 +160,7 @@ def _locate_single(t, ref):
     return _tag_x_cm(t["id"]) - lateral, d - TAG_GAP_CM + CAMERA_OFFSET_CM
 
 
-def locate(tags, ref, cols):
+def locate(tags, ref, cols, expect_x_cm=None):
     """보이는 태그로 로봇 중심 위치(cm)와 칸을 구한다. 태그가 없으면 None.
 
     태그 2개 이상, 또는 1개라도 크게(SINGLE_PNP_MIN_PX 이상) 보이면 PnP 로 틀어짐(yaw)까지 풀어서 계산한다.
@@ -177,6 +185,14 @@ def locate(tags, ref, cols):
         t = min(known, key=lambda k: abs(k["cx"] - ref["cx0"]))   # 화면 가운데에 가장 가까운(정면) 태그
         x, y = _locate_single(t, ref)
         method, used = "single", [t["id"]]
+        d = ref["fx"] * TAG_SIZE_CM / t["size_px"]                # 렌즈 -> 태그 거리
+        if FAR_YAW and expect_x_cm is not None and d >= FAR_YAW_CM:
+            # 기대 위치(칸 중앙)에서 보면 태그가 화면 어디에 보여야 하는지와 실제 위치의 각도 차 = 틀어짐
+            expect_bearing = math.atan2(_tag_x_cm(t["id"]) - expect_x_cm, d)
+            seen_bearing = math.atan2(t["cx"] - ref["cx0"], ref["fx"])
+            yaw = math.degrees(expect_bearing - seen_bearing)       # 동쪽(시계)으로 틀어지면 +
+            x = expect_x_cm
+            method = "single_far_yaw"
     cell = [int(math.floor(x / CELL_CM)), int(math.floor(y / CELL_CM))]
     cxm, cym = cell_center_cm(cell)
     return {"tag_ids": used, "method": method, "x_cm": round(x, 1), "y_cm": round(y, 1),
@@ -189,7 +205,8 @@ def check_home(tags, ref, home, cols, tol_cm=HOME_TOL_CM, yaw_tol_deg=YAW_TOL_DE
 
     반환: {"ok": bool, "reason", "error_cm": [dx, dy] 또는 None, "yaw_deg", "located": locate 결과}
     """
-    loc = locate(tags, ref, cols)
+    hx0, _ = cell_center_cm(home)
+    loc = locate(tags, ref, cols, expect_x_cm=hx0)
     if loc is None:
         return {"ok": False, "reason": "tag_not_found", "error_cm": None, "yaw_deg": None, "located": None}
     hx, hy = cell_center_cm(home)
