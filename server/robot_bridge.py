@@ -30,18 +30,20 @@ class SerialLost(Exception):
     pass
 
 
-# ESP32 가 이동/nudge 끝에 보내는 'HEAD L-R <펄스>' / 'HEAD F-R <펄스>' (send_and_wait 가 채운다)
-last_head = {"axis": None, "pulses": None}
+# ESP32 가 이동마다 보내는 'HEAD L-R <펄스> <방향>' / 'HEAD F-R <펄스> <방향>' (send_and_wait 가 모은다)
+# 장애물을 만나면 멈춘 이동 + 칸 중앙 복귀(반대 방향) 두 줄이 온다
+heads = []
 
 
 def post_odom(line):
-    """방금 끝낸 명령의 좌우(앞뒤) 바퀴 차이를 서버에 보낸다. 서버는 이걸로 틀어짐을 따라간다."""
-    if last_head["axis"] is None:
-        return
-    try:
-        api_post("/robot/odom", {"command": line, "axis": last_head["axis"], "pulses": last_head["pulses"]})
-    except requests.RequestException as e:
-        print("odom report error:", e)
+    """방금 끝낸 명령에서 나온 바퀴 차이들을 서버에 보낸다. 서버는 이걸로 틀어짐을 따라간다.
+    결과가 DONE 이든 OBSTACLE 이든 보낸다 (장애물로 멈춘 이동도 틀어진다)."""
+    for axis, pulses, d in heads:
+        try:
+            api_post("/robot/odom", {"command": d or line, "axis": axis, "pulses": pulses})
+        except requests.RequestException as e:
+            print("odom report error:", e)
+    heads.clear()
 
 class Resume(Exception):
     """halt 후 '시작점에 놓기'가 확인되어 다시 시작한다."""
@@ -116,7 +118,7 @@ def send_and_wait(ser, line, expect, timeout):
     반환: "ok" / "err" / "timeout"
     연결이 끊기면 SerialLost 발생
     """
-    last_head["axis"] = last_head["pulses"] = None
+    heads.clear()
     try:
         ser.reset_input_buffer()
         ser.write((line + "\n").encode())
@@ -129,10 +131,10 @@ def send_and_wait(ser, line, expect, timeout):
                 continue
             print("ESP32:", reply)
             if reply.startswith("HEAD "):
+                p = reply.split()
                 try:
-                    _, axis, val = reply.split()
-                    last_head["axis"], last_head["pulses"] = ("FR" if axis == "F-R" else "LR"), float(val)
-                except ValueError:
+                    heads.append(("FR" if p[1] == "F-R" else "LR", float(p[2]), p[3] if len(p) > 3 else None))
+                except (IndexError, ValueError):
                     pass
                 continue
             if reply == expect:
@@ -240,8 +242,7 @@ def run(ser):
                 result = send_and_wait(ser, line, expect, RAW_TIMEOUT_SEC)
             except SerialLost:
                 halt(None, f"'{line}' 중 ESP32 연결 끊김")
-            if result == "ok":
-                post_odom(line)
+            post_odom(line)             # nudge 가 장애물로 멈췄어도 움직인 만큼은 보낸다
             try:
                 api_post("/apriltag/job-done", {"ok": result == "ok", "reply": str(result)})
             except requests.RequestException as e:
@@ -280,8 +281,8 @@ def run(ser):
             # 이동 도중 끊김: 실제로 몇 칸 갔는지 알 수 없다
             halt(None, f"'{line}' 이동 중 ESP32 연결 끊김")
 
-        if result == "ok":
-            post_odom(line)
+        if result == "ok" or result.startswith("OBSTACLE"):
+            post_odom(line)              # 장애물 보고보다 먼저: 서버가 재탐색 뒤 찍을 때 head 가 맞아야 한다
 
         if result.startswith("OBSTACLE"):
             if not report_obstacle(result):
