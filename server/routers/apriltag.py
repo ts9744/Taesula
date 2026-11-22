@@ -437,10 +437,19 @@ def route_check_hold(prev_move):
     return True
 
 
+ROUTE_RETRY = 2          # 태그를 못 찾으면 이만큼 더 찍어 본다 (멈춘 직후 흔들림)
+ROUTE_RETRY_SEC = 0.3
+
+
 def _route_check_worker(pos, key):
     r = None
     try:
         r = _measure(settle=True, cell=pos)
+        for _ in range(ROUTE_RETRY):
+            if r is None or r["reason"] != "tag_not_found":
+                break
+            time.sleep(ROUTE_RETRY_SEC)
+            r = _measure(settle=False, cell=pos)
     except Exception as e:                        # 카메라 등 예외: 확인 없이 그대로 간다
         print("[apriltag] route check error:", e, flush=True)
     finally:
