@@ -211,6 +211,9 @@ def check_home(tags, ref, home, cols, tol_cm=HOME_TOL_CM, yaw_tol_deg=YAW_TOL_DE
         return {"ok": False, "reason": "tag_not_found", "error_cm": None, "yaw_deg": None, "located": None}
     hx, hy = cell_center_cm(home)
     dx, dy = round(loc["x_cm"] - hx, 1), round(loc["y_cm"] - hy, 1)
+    FAR_YAW_TOL_DEG = 5.0     # 멀리서 읽은 yaw 는 밀림이 섞여 있어 크게 둔다 (83cm 에서 7cm 밀림 = 5도)
+
     yaw = loc["yaw_deg"]
-    ok = abs(dx) <= tol_cm and abs(dy) <= tol_cm and (yaw is None or abs(yaw) <= yaw_tol_deg)
+    ytol = FAR_YAW_TOL_DEG if loc["method"] == "single_far_yaw" else yaw_tol_deg
+    ok = abs(dx) <= tol_cm and abs(dy) <= tol_cm and (yaw is None or abs(yaw) <= ytol)
     return {"ok": ok, "reason": "ok" if ok else "misaligned", "error_cm": [dx, dy], "yaw_deg": yaw, "located": loc}
