@@ -307,9 +307,13 @@ function aprilTagSettings() {
       const rec = m ? Object.entries(m).map(([g, v]) => `${g === 'fb' ? '앞뒤' : '좌우'} 1칸 ${v.avg_cm}cm → ${g === 'fb' ? 'PULSES_PER_CM_FWD' : 'PULSES_PER_CM_STRAFE'} 추천 ${v.recommended_pulses_per_cm ?? '-'}`).join(' / ') : '';
       const rot = s.nudge_model && s.nudge_model.rot;
       const rotTxt = rot ? ` · 회전: 명령 대비 실제 x${rot.scale.toFixed(2)} (${rot.n}회) → 새 ROTATE_PULSES_PER_DEG = 지금 값 ÷ ${rot.scale.toFixed(2)}` : '';
+<<<<<<< HEAD
       const dc = s.dest_check;
       const dcTxt = dc ? ` · 마지막 배송지 확인: ${dc.reason === 'ok' ? '정상' : dc.reason}${dc.error_cm ? ` (x ${dc.error_cm[0]}cm, y ${dc.error_cm[1]}cm)` : ''}` : '';
       info.textContent = `${s.calibrated ? '기준 등록됨' : '기준 없음 (먼저 기준 등록)'}${s.job ? ` · 진행 중: ${s.job.kind === 'measure' ? '이동 거리 측정' : (s.job.where === 'dest' ? '배송지 보정' : '자동 보정')}` : ''}${rec ? ` · ${rec}` : ''}${rotTxt}${dcTxt}`;
+=======
+      info.textContent = `${s.calibrated ? '기준 등록됨' : '기준 없음 (먼저 기준 등록)'}${s.job ? ` · 진행 중: ${s.job.kind === 'measure' ? '이동 거리 측정' : '자동 보정'}` : ''}${rec ? ` · ${rec}` : ''}${rotTxt}`;
+>>>>>>> 3fa91bc92a14e661857ab75603381a73ce6aaa0e
     } catch (e) { info.textContent = `상태를 불러오지 못했습니다. ${e.message}`; }
   };
 
