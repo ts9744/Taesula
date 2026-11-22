@@ -1,75 +1,152 @@
 // 홈: 로봇 상태 · 빠른 이동 · 최근 물품
-import { api, getAdminKey, setAdminKey } from '../api.js';
-import { h, icon, btn, busy, toast, openSheet, confirmDialog, field, gridView, mergeLocations, itemBadge, robotStatusLabel, sida, sidaFace } from '../ui.js';
+import { api, getAdminKey, setAdminKey } from "../api.js";
+import {
+  h,
+  icon,
+  btn,
+  busy,
+  toast,
+  openSheet,
+  confirmDialog,
+  field,
+  gridView,
+  mergeLocations,
+  itemBadge,
+  robotStatusLabel,
+  sida,
+  sidaFace,
+} from "../ui.js";
 
 export default {
-  title: '홈',
+  title: "홈",
 
   renderHeader() {
     return [
-      h('div', { class: 'brand' },
-        h('div', { class: 'brand-mark' }, sidaFace(30)),
-        h('div', null, h('span', { class: 'brand-name' }, 'Taesula'), h('span', { class: 'brand-sub' }, '스마트 물류 로봇 관제'))),
-      h('button', { type: 'button', class: 'icon-btn', 'aria-label': '설정', onClick: openSettings }, icon('settings', 22)),
+      h(
+        "div",
+        { class: "brand" },
+        h("div", { class: "brand-mark" }, sidaFace(30)),
+        h(
+          "div",
+          null,
+          h("span", { class: "brand-name" }, "Taesula"),
+          h("span", { class: "brand-sub" }, "스마트 물류 로봇 관제"),
+        ),
+      ),
+      h(
+        "button",
+        {
+          type: "button",
+          class: "icon-btn",
+          "aria-label": "설정",
+          onClick: openSettings,
+        },
+        icon("settings", 22),
+      ),
     ];
   },
 
   render(root) {
     let alive = true;
-    let grid = null;       // 서버 raw_grid + 목적지 합친 것
+    let grid = null; // 서버 raw_grid + 목적지 합친 것
     let labels = null;
     let locations = [];
 
     // --- 로봇 카드
-    const mapBox = h('div', { class: 'grid-map' });
-    const conn = h('span', { class: 'conn off' }, '연결 확인 중');
-    const pos = h('span', { class: 'v big' }, '—');
-    const state = h('span', { class: 'v' }, '—');
-    const stage = h('div', { class: 'robot-stage' }, sida('idle', 190));
+    const mapBox = h("div", { class: "grid-map" });
+    const conn = h("span", { class: "conn off" }, "연결 확인 중");
+    const pos = h("span", { class: "v big" }, "—");
+    const state = h("span", { class: "v" }, "—");
+    const stage = h("div", { class: "robot-stage" }, sida("idle", 190));
 
     // --- 길이 막혔을 때 안내 (manual_required: 갈 수 있는 길이 모두 막혀 로봇이 멈춤. 사람이 치우고 지도에서 해제)
-    const navText = h('p', { class: 'msg' });
-    const resumeBtn = btn('다시 시도', { kind: 'primary', icon: 'refresh', block: true });
+    const navText = h("p", { class: "msg" });
+    const resumeBtn = btn("다시 시도", {
+      kind: "primary",
+      icon: "refresh",
+      block: true,
+    });
     resumeBtn.hidden = true;
-    resumeBtn.addEventListener('click', () => busy(resumeBtn, async () => {
-      try {
-        const r = await api.resume();
-        if (r.status === 'resumed') toast('새 경로로 다시 출발합니다.', 'ok');
-        else toast('아직 갈 수 있는 길이 없습니다. 장애물과 직접 표시한 칸을 확인하세요.', 'error');
-        pollStatus();
-      } catch (e) { toast(e.message, 'error'); }
-    }));
+    resumeBtn.addEventListener("click", () =>
+      busy(resumeBtn, async () => {
+        try {
+          const r = await api.resume();
+          if (r.status === "resumed") toast("새 경로로 다시 출발합니다.", "ok");
+          else
+            toast(
+              "아직 갈 수 있는 길이 없습니다. 장애물과 직접 표시한 칸을 확인하세요.",
+              "error",
+            );
+          pollStatus();
+        } catch (e) {
+          toast(e.message, "error");
+        }
+      }),
+    );
     // --- 복귀 후 홈 위치가 어긋났을 때 (AprilTag). 대기열 출발이 멈춘다
-    const recheckBtn = btn('위치 다시 확인', { kind: 'primary', icon: 'refresh', block: true });
-    const placeBtn = btn('시작점에 놓기', { block: true });
+    const recheckBtn = btn("위치 다시 확인", {
+      kind: "primary",
+      icon: "refresh",
+      block: true,
+    });
+    const placeBtn = btn("시작점에 놓기", { block: true });
     recheckBtn.hidden = placeBtn.hidden = true;
-    recheckBtn.addEventListener('click', () => busy(recheckBtn, async () => {
-      try {
-        const r = await api.homeCheck();
-        toast(r.ok ? '홈 위치가 맞습니다. 대기 중인 배송을 이어갑니다.' : homeCheckText(r), r.ok ? 'ok' : 'error');
-        pollStatus();
-      } catch (e) { toast(e.message, 'error'); }
-    }));
-    placeBtn.addEventListener('click', () => busy(placeBtn, async () => {
-      try {
-        await api.placeAtStart();
-        toast('시작점에 놓은 것으로 처리했습니다.', 'ok');
-        pollStatus();
-      } catch (e) { toast(e.message, 'error'); }
-    }));
-    const navAlert = h('div', { class: 'nav-alert', role: 'status' },
-      h('div', { class: 'row' }, icon('alert', 18, 2), navText), resumeBtn, recheckBtn, placeBtn);
+    recheckBtn.addEventListener("click", () =>
+      busy(recheckBtn, async () => {
+        try {
+          const r = await api.homeCheck();
+          toast(
+            r.ok
+              ? "홈 위치가 맞습니다. 대기 중인 배송을 이어갑니다."
+              : homeCheckText(r),
+            r.ok ? "ok" : "error",
+          );
+          pollStatus();
+        } catch (e) {
+          toast(e.message, "error");
+        }
+      }),
+    );
+    placeBtn.addEventListener("click", () =>
+      busy(placeBtn, async () => {
+        try {
+          await api.placeAtStart();
+          toast("시작점에 놓은 것으로 처리했습니다.", "ok");
+          pollStatus();
+        } catch (e) {
+          toast(e.message, "error");
+        }
+      }),
+    );
+    const navAlert = h(
+      "div",
+      { class: "nav-alert", role: "status" },
+      h("div", { class: "row" }, icon("alert", 18, 2), navText),
+      resumeBtn,
+      recheckBtn,
+      placeBtn,
+    );
     navAlert.hidden = true;
 
     function homeCheckText(hc) {
-      if (!hc) return '';
-      if (hc.reason === 'tag_not_found') return '홈 앞 태그가 보이지 않습니다. 태그를 가리는 물건이 있는지 확인하세요.';
-      if (hc.reason === 'camera_error') return `카메라 오류로 홈 위치를 확인하지 못했습니다. (${hc.detail || ''})`;
-      if (hc.reason === 'recalibrate') return hc.detail || '카메라 설정이 바뀌었습니다. 설정에서 AprilTag 기준 등록을 다시 하세요.';
-      if (hc.reason === 'too_far') return '홈에서 너무 많이 벗어나 자동 보정을 하지 않았습니다. 로봇을 홈에 놓고 시작점에 놓기를 누르세요.';
-      if (hc.reason === 'maybe_rotated') return '로봇이 회전해 있을 수 있어 자동 보정을 하지 않았습니다. 로봇을 홈에 똑바로 놓고 시작점에 놓기를 누르세요.';
-      if (hc.reason === 'too_many_steps' || hc.reason === 'not_moving') return '자동 보정으로 홈 위치를 맞추지 못했습니다. 로봇을 맞춰 놓고 다시 확인하세요.';
-      if (String(hc.reason).startsWith('esp32:')) return '자동 보정 중 로봇이 명령을 수행하지 못했습니다(장애물 등). 주변을 확인하고 다시 확인을 누르세요.';
+      if (!hc) return "";
+      if (hc.reason === "tag_not_found")
+        return "홈 앞 태그가 보이지 않습니다. 태그를 가리는 물건이 있는지 확인하세요.";
+      if (hc.reason === "camera_error")
+        return `카메라 오류로 홈 위치를 확인하지 못했습니다. (${hc.detail || ""})`;
+      if (hc.reason === "recalibrate")
+        return (
+          hc.detail ||
+          "카메라 설정이 바뀌었습니다. 설정에서 AprilTag 기준 등록을 다시 하세요."
+        );
+      if (hc.reason === "too_far")
+        return "홈에서 너무 많이 벗어나 자동 보정을 하지 않았습니다. 로봇을 홈에 놓고 시작점에 놓기를 누르세요.";
+      if (hc.reason === "maybe_rotated")
+        return "로봇이 회전해 있을 수 있어 자동 보정을 하지 않았습니다. 로봇을 홈에 똑바로 놓고 시작점에 놓기를 누르세요.";
+      if (hc.reason === "too_many_steps" || hc.reason === "not_moving")
+        return "자동 보정으로 홈 위치를 맞추지 못했습니다. 로봇을 맞춰 놓고 다시 확인하세요.";
+      if (String(hc.reason).startsWith("esp32:"))
+        return "자동 보정 중 로봇이 명령을 수행하지 못했습니다(장애물 등). 주변을 확인하고 다시 확인을 누르세요.";
       const [dx, dy] = hc.error_cm || [0, 0];
       const lr = dx > 0 ? `오른쪽 ${dx}cm` : `왼쪽 ${-dx}cm`;
       const fb = dy > 0 ? `뒤로 ${dy}cm` : `앞으로 ${-dy}cm`;
@@ -77,23 +154,25 @@ export default {
     }
 
     function setNav(ob) {
-      const nav = ob ? ob.nav_status : 'idle';
+      const nav = ob ? ob.nav_status : "idle";
       recheckBtn.hidden = placeBtn.hidden = true;
       resumeBtn.hidden = true;
       if (ob && ob.tag_job) {
-        navText.textContent = ob.tag_job.kind === 'measure'
-          ? `이동 거리를 재는 중입니다 (${ob.tag_job.step || 0}). 로봇 주변을 비워 주세요.`
-          : `홈 위치를 자동으로 맞추는 중입니다 (${ob.tag_job.step}번째).`;
-        navAlert.classList.remove('manual');
+        navText.textContent =
+          ob.tag_job.kind === "measure"
+            ? `이동 거리를 재는 중입니다 (${ob.tag_job.step || 0}). 로봇 주변을 비워 주세요.`
+            : `홈 위치를 자동으로 맞추는 중입니다 (${ob.tag_job.step}번째).`;
+        navAlert.classList.remove("manual");
         navAlert.hidden = false;
       } else if (ob && ob.home_misaligned) {
         navText.textContent = homeCheckText(ob.home_check);
-        navAlert.classList.add('manual');
+        navAlert.classList.add("manual");
         recheckBtn.hidden = placeBtn.hidden = false;
         navAlert.hidden = false;
-      } else if (nav === 'manual_required') {
-        navText.textContent = '갈 수 있는 길이 모두 막혀 로봇이 멈췄습니다. 장애물을 치운 뒤 지도에서 막힌 칸을 눌러 해제해 주세요. 한꺼번에 풀려면 다시 시도를 누르세요.';
-        navAlert.classList.add('manual');
+      } else if (nav === "manual_required") {
+        navText.textContent =
+          "갈 수 있는 길이 모두 막혀 로봇이 멈췄습니다. 장애물을 치운 뒤 지도에서 막힌 칸을 눌러 해제해 주세요. 한꺼번에 풀려면 다시 시도를 누르세요.";
+        navAlert.classList.add("manual");
         resumeBtn.hidden = false;
         navAlert.hidden = false;
       } else {
@@ -101,87 +180,178 @@ export default {
       }
     }
 
-    let stageState = 'idle';
-    const robotCard = h('section', { class: 'robot-card', 'aria-label': '로봇 SIDA 상태' },
-      h('div', { class: 'head' }, h('span', { class: 'name' }, 'SIDA', h('small', null, '물류 로봇')), conn),
+    let stageState = "idle";
+    const robotCard = h(
+      "section",
+      { class: "robot-card", "aria-label": "로봇 SIDA 상태" },
+      h(
+        "div",
+        { class: "head" },
+        h("span", { class: "name" }, "SIDA", h("small", null, "물류 로봇")),
+        conn,
+      ),
       stage,
-      h('div', { class: 'robot-body' },
+      h(
+        "div",
+        { class: "robot-body" },
         mapBox,
-        h('div', { class: 'robot-info' },
-          h('div', null, h('span', { class: 'k' }, '현재 위치'), pos),
-          h('div', null, h('span', { class: 'k' }, '상태'), state))),
-      navAlert);
+        h(
+          "div",
+          { class: "robot-info" },
+          h("div", null, h("span", { class: "k" }, "현재 위치"), pos),
+          h("div", null, h("span", { class: "k" }, "상태"), state),
+        ),
+      ),
+      navAlert,
+    );
 
     // 이동 중이면 카트에 탄 SIDA, 아니면 카트에서 내린 SIDA
     function setStage(status) {
-      const next = status || 'offline';
+      const next = status || "offline";
       if (next === stageState) return;
       stageState = next;
       stage.replaceChildren(sida(next, 190));
     }
 
     // --- 빠른 이동
-    const cta = h('a', { class: 'btn btn-primary btn-lg btn-block', href: '#/scan' }, icon('scan', 22, 2), 'QR 인식 시작');
+    const cta = h(
+      "a",
+      { class: "btn btn-primary btn-lg btn-block", href: "#/scan" },
+      icon("scan", 22, 2),
+      "QR 인식 시작",
+    );
     const RETURN_MSG = {
-      returning: '시작점으로 복귀를 시작합니다.',
-      already_home: '이미 시작점에 있습니다.',
-      no_path: '복귀 경로가 막혀 있습니다. 장애물을 치우고 지도에서 막힌 칸을 해제해 주세요.',
+      returning: "시작점으로 복귀를 시작합니다.",
+      already_home: "이미 시작점에 있습니다.",
+      no_path:
+        "복귀 경로가 막혀 있습니다. 장애물을 치우고 지도에서 막힌 칸을 해제해 주세요.",
     };
-    const returnBtn = btn('시작점으로 복귀', { kind: 'secondary', icon: 'home', block: true });
-    returnBtn.addEventListener('click', () => busy(returnBtn, async () => {
-      try {
-        const r = await api.returnHome();
-        const ok = r.status === 'returning' || r.status === 'already_home';
-        toast(RETURN_MSG[r.status] || r.detail || r.message || '복귀하지 못했습니다.', ok ? 'ok' : 'error');
-        pollStatus();
-      } catch (e) { toast(e.message, 'error'); }
-    }));
-    const quick = h('div', { class: 'quick' },
-      [['register', 'plus', '물품 등록'], ['manage', 'list', '물품 관리'], ['grid', 'grid', '격자 생성']].map(([r, ic, t]) =>
-        h('a', { href: `#/${r}` }, h('div', { class: 'ico' }, icon(ic, 20, 2)), t)));
+    const returnBtn = btn("시작점으로 복귀", {
+      kind: "secondary",
+      icon: "home",
+      block: true,
+    });
+    returnBtn.addEventListener("click", () =>
+      busy(returnBtn, async () => {
+        try {
+          const r = await api.returnHome();
+          const ok = r.status === "returning" || r.status === "already_home";
+          toast(
+            RETURN_MSG[r.status] ||
+              r.detail ||
+              r.message ||
+              "복귀하지 못했습니다.",
+            ok ? "ok" : "error",
+          );
+          pollStatus();
+        } catch (e) {
+          toast(e.message, "error");
+        }
+      }),
+    );
+    const quick = h(
+      "div",
+      { class: "quick" },
+      [
+        ["register", "plus", "물품 등록"],
+        ["manage", "list", "물품 관리"],
+        ["grid", "grid", "격자 생성"],
+      ].map(([r, ic, t]) =>
+        h(
+          "a",
+          { href: `#/${r}` },
+          h("div", { class: "ico" }, icon(ic, 20, 2)),
+          t,
+        ),
+      ),
+    );
 
     // --- 최근 물품
-    const recentList = h('div', { class: 'item-rows' });
-    const recent = h('section', { class: 'card', style: { gap: '6px' } },
-      h('div', { class: 'card-head' }, h('h2', null, '최근 물품'),
-        h('a', { href: '#/manage', style: { fontSize: '14px', fontWeight: 600, textDecoration: 'none' } }, '전체 보기')),
-      recentList);
+    const recentList = h("div", { class: "item-rows" });
+    const recent = h(
+      "section",
+      { class: "card", style: { gap: "6px" } },
+      h(
+        "div",
+        { class: "card-head" },
+        h("h2", null, "최근 물품"),
+        h(
+          "a",
+          {
+            href: "#/manage",
+            style: {
+              fontSize: "14px",
+              fontWeight: 600,
+              textDecoration: "none",
+            },
+          },
+          "전체 보기",
+        ),
+      ),
+      recentList,
+    );
 
     root.append(robotCard, cta, returnBtn, quick, recent);
 
     let mapEl = mapBox;
     function setMap(robot, blocked = []) {
       if (!grid) {
-        mapEl.replaceChildren(h('div', { style: { gridColumn: '1 / -1', fontSize: '12px', color: '#B9CFD0', lineHeight: 1.5 } },
-          '격자 지도가 아직 없습니다. 격자 탭에서 만들어 주세요.'));
+        mapEl.replaceChildren(
+          h(
+            "div",
+            {
+              style: {
+                gridColumn: "1 / -1",
+                fontSize: "12px",
+                color: "#B9CFD0",
+                lineHeight: 1.5,
+              },
+            },
+            "격자 지도가 아직 없습니다. 격자 탭에서 만들어 주세요.",
+          ),
+        );
         return;
       }
 
       const shown = grid.map((row) => row.slice());
       for (const b of blocked) {
-        const r = b.y - 1, c = b.x - 1;
+        const r = b.y - 1,
+          c = b.x - 1;
         if (shown[r] && shown[r][c] === 0) shown[r][c] = 1;
       }
       const next = gridView(shown, { dark: true, robot });
-      next.setAttribute('aria-label', '공장 격자 지도와 로봇 위치');
+      next.setAttribute("aria-label", "공장 격자 지도와 로봇 위치");
       const keys = new Set(blocked.map((b) => `${b.x},${b.y}`));
-      next.style.cursor = 'pointer';
-      next.addEventListener('click', async (e) => {
-        const cell = e.target.closest('.cell');
+      next.style.cursor = "pointer";
+      next.addEventListener("click", async (e) => {
+        const cell = e.target.closest(".cell");
         if (!cell) return;
         const idx = Array.prototype.indexOf.call(next.children, cell);
         const cols = grid[0].length;
-        const r = Math.floor(idx / cols), c = idx % cols;
+        const r = Math.floor(idx / cols),
+          c = idx % cols;
         const v = grid[r][c];
-        if (v === 1) { toast('지도 장애물은 격자 탭에서 수정하세요.', 'error'); return; }
-        if (v === 2 || v === 3) { toast('시작점과 목적지 칸에는 표시할 수 없습니다.', 'error'); return; }
+        if (v === 1) {
+          toast("지도 장애물은 격자 탭에서 수정하세요.", "error");
+          return;
+        }
+        if (v === 2 || v === 3) {
+          toast("시작점과 목적지 칸에는 표시할 수 없습니다.", "error");
+          return;
+        }
         const isBlocked = keys.has(`${c + 1},${r + 1}`);
         try {
           const res = await api.manualBlock(c + 1, r + 1, !isBlocked);
-          if (res.status === 'ok') toast(isBlocked ? '장애물을 해제했습니다.' : '장애물을 표시했습니다.', 'ok');
-          else toast(res.reason || '표시하지 못했습니다.', 'error');
+          if (res.status === "ok")
+            toast(
+              isBlocked ? "장애물을 해제했습니다." : "장애물을 표시했습니다.",
+              "ok",
+            );
+          else toast(res.reason || "표시하지 못했습니다.", "error");
           pollStatus();
-        } catch (err) { toast(err.message, 'error'); }
+        } catch (err) {
+          toast(err.message, "error");
+        }
       });
       mapEl.replaceWith(next);
       mapEl = next;
@@ -196,26 +366,49 @@ export default {
         ]);
         if (!alive) return;
         locations = locs;
-        if (gm && gm.raw_grid) ({ grid, labels } = mergeLocations(gm.raw_grid, locations));
+        if (gm && gm.raw_grid)
+          ({ grid, labels } = mergeLocations(gm.raw_grid, locations));
         renderRecent(items);
       } catch (e) {
         if (!alive) return;
-        recentList.replaceChildren(h('div', { class: 'empty' }, e.message));
+        recentList.replaceChildren(h("div", { class: "empty" }, e.message));
       }
     }
 
     function renderRecent(items) {
-      const zone = Object.fromEntries(locations.map((l) => [l.id, l.zone_name]));
+      const zone = Object.fromEntries(
+        locations.map((l) => [l.id, l.zone_name]),
+      );
       const latest = [...items].sort((a, b) => b.id - a.id).slice(0, 3);
       if (!latest.length) {
-        recentList.replaceChildren(h('div', { class: 'empty', style: { marginBottom: '12px' } }, '아직 등록된 물품이 없습니다.'));
+        recentList.replaceChildren(
+          h(
+            "div",
+            { class: "empty", style: { marginBottom: "12px" } },
+            "아직 등록된 물품이 없습니다.",
+          ),
+        );
         return;
       }
-      recentList.replaceChildren(...latest.map((it) =>
-        h('div', { class: 'item-row' },
-          h('div', { class: 't' }, h('span', { class: 'n' }, it.name),
-            h('span', { class: 's' }, `${it.qr_code} · ${zone[it.destination_id] || `목적지 ${it.destination_id}`}`)),
-          itemBadge(it.status))));
+      recentList.replaceChildren(
+        ...latest.map((it) =>
+          h(
+            "div",
+            { class: "item-row" },
+            h(
+              "div",
+              { class: "t" },
+              h("span", { class: "n" }, it.name),
+              h(
+                "span",
+                { class: "s" },
+                `${it.qr_code} · ${zone[it.destination_id] || `목적지 ${it.destination_id}`}`,
+              ),
+            ),
+            itemBadge(it.status),
+          ),
+        ),
+      );
     }
 
     async function pollStatus() {
@@ -225,22 +418,27 @@ export default {
         const ob = await api.obstacles().catch(() => null);
         const blocked = ob && ob.blocked ? ob.blocked : [];
         const r = s.robot_status || {};
-        conn.className = 'conn';
-        conn.textContent = '연결됨';
+        conn.className = "conn";
+        conn.textContent = "연결됨";
         const hasPos = r.current_x != null && r.current_y != null;
-        pos.textContent = hasPos ? `(${r.current_x}, ${r.current_y})` : '—';
+        pos.textContent = hasPos ? `(${r.current_x}, ${r.current_y})` : "—";
         // 경로 끝의 stop 은 이동이 아니므로 세지 않는다 (지금 이동 중인 묶음은 이미 경로에서 빠져 있다)
-        const remaining = (s.current_path || []).filter((c) => c !== 'stop' && !String(c).startsWith('raw:')).length;
-        state.textContent = `${robotStatusLabel(r.status)}${remaining ? ` · 남은 이동 ${remaining}칸` : ''}`;
-        setMap(hasPos ? { x: r.current_x - 1, y: r.current_y - 1 } : null, blocked);
+        const remaining = (s.current_path || []).filter(
+          (c) => c !== "stop" && !String(c).startsWith("raw:"),
+        ).length;
+        state.textContent = `${robotStatusLabel(r.status)}${remaining ? ` · 남은 이동 ${remaining}칸` : ""}`;
+        setMap(
+          hasPos ? { x: r.current_x - 1, y: r.current_y - 1 } : null,
+          blocked,
+        );
         setStage(r.status);
         setNav(ob);
       } catch {
         if (!alive) return;
-        conn.className = 'conn off';
-        conn.textContent = '연결 끊김';
+        conn.className = "conn off";
+        conn.textContent = "연결 끊김";
         setMap(null);
-        setStage('offline');
+        setStage("offline");
         setNav(null);
       }
     }
@@ -248,135 +446,240 @@ export default {
     loadStatic().then(pollStatus);
     const timer = setInterval(pollStatus, 3000);
 
-    return () => { alive = false; clearInterval(timer); };
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
   },
 };
 
 function openSettings() {
-  const tagBox = h('div', { style: { display: 'flex', flexDirection: 'column', gap: '10px' } });
+  const tagBox = h("div", {
+    style: { display: "flex", flexDirection: "column", gap: "10px" },
+  });
   // 관리자 키: 격자 지도 저장과 목적지 등록에 필요하다. 비워 두면 지운다.
-  const adminInput = h('input', {
-    class: 'input', type: 'password', autocomplete: 'off',
-    placeholder: '관리자만 입력', value: getAdminKey(),
+  const adminInput = h("input", {
+    class: "input",
+    type: "password",
+    autocomplete: "off",
+    placeholder: "관리자만 입력",
+    value: getAdminKey(),
   });
   let close;
-  const save = btn('저장', {
-    kind: 'primary', block: true, onClick: async () => {
+  const save = btn("저장", {
+    kind: "primary",
+    block: true,
+    onClick: async () => {
       const key = adminInput.value.trim();
       const keyChanged = key !== getAdminKey();
       setAdminKey(key);
       close();
-      let msg = '설정을 저장했습니다.';
-      let kind = 'ok';
+      let msg = "설정을 저장했습니다.";
+      let kind = "ok";
       if (keyChanged && key) {
         try {
           const r = await api.adminCheck();
-          if (r.admin && r.enabled) msg = '관리자 키를 확인했습니다. 지도와 물품을 수정할 수 있습니다.';
-          else if (!r.enabled) msg = '서버에 관리자 키가 설정되어 있지 않아 누구나 지도를 수정할 수 있습니다.';
-          else { msg = '관리자 키가 맞지 않습니다.'; kind = 'error'; }
-        } catch (e) { msg = `관리자 키를 확인하지 못했습니다. ${e.message}`; kind = 'error'; }
+          if (r.admin && r.enabled)
+            msg = "관리자 키를 확인했습니다. 지도와 물품을 수정할 수 있습니다.";
+          else if (!r.enabled)
+            msg =
+              "서버에 관리자 키가 설정되어 있지 않아 누구나 지도를 수정할 수 있습니다.";
+          else {
+            msg = "관리자 키가 맞지 않습니다.";
+            kind = "error";
+          }
+        } catch (e) {
+          msg = `관리자 키를 확인하지 못했습니다. ${e.message}`;
+          kind = "error";
+        }
       } else if (keyChanged) {
-        msg = '관리자 키를 지웠습니다.';
+        msg = "관리자 키를 지웠습니다.";
       }
       toast(msg, kind);
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
-    }
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    },
   });
   close = openSheet({
-    title: '설정',
-    body: h('div', { style: { display: 'flex', flexDirection: 'column', gap: '14px' } },
-      h('p', { style: { margin: 0, fontSize: '14px', lineHeight: 1.6, color: 'var(--muted)' } },
-        '관리자 키를 넣으면 격자 지도 수정·저장, 목적지 등록, 물품 수정·삭제를 할 수 있습니다. 비워 두면 물품 등록과 조회만 됩니다.'),
-      field('관리자 키', adminInput),
+    title: "설정",
+    body: h(
+      "div",
+      { style: { display: "flex", flexDirection: "column", gap: "14px" } },
+      h(
+        "p",
+        {
+          style: {
+            margin: 0,
+            fontSize: "14px",
+            lineHeight: 1.6,
+            color: "var(--muted)",
+          },
+        },
+        "관리자 키를 넣으면 격자 지도 수정·저장, 목적지 등록, 물품 수정·삭제를 할 수 있습니다. 비워 두면 물품 등록과 조회만 됩니다.",
+      ),
+      field("관리자 키", adminInput),
       save,
-      btn('취소', { block: true, onClick: () => close() }),
-      tagBox),
+      btn("취소", { block: true, onClick: () => close() }),
+      tagBox,
+    ),
   });
 
   // 관리자일 때만 AprilTag 설정을 보여 준다
-  api.adminCheck().then((r) => { if (r.admin) tagBox.append(...aprilTagSettings()); }).catch(() => {});
+  api
+    .adminCheck()
+    .then((r) => {
+      if (r.admin) tagBox.append(...aprilTagSettings());
+    })
+    .catch(() => {});
 }
 
 // ---------- AprilTag (관리자) ----------
 function aprilTagSettings() {
-  const info = h('p', { style: { margin: 0, fontSize: '13px', lineHeight: 1.6, color: 'var(--muted)' } }, '상태 확인 중…');
+  const info = h(
+    "p",
+    {
+      style: {
+        margin: 0,
+        fontSize: "13px",
+        lineHeight: 1.6,
+        color: "var(--muted)",
+      },
+    },
+    "상태 확인 중…",
+  );
   const refresh = async () => {
     try {
       const s = await api.tagStatus();
       const m = s.last_measure && s.last_measure.cell_move;
-      const rec = m ? Object.entries(m).map(([g, v]) => `${g === 'fb' ? '앞뒤' : '좌우'} 1칸 ${v.avg_cm}cm → ${g === 'fb' ? 'PULSES_PER_CM_FWD' : 'PULSES_PER_CM_STRAFE'} 추천 ${v.recommended_pulses_per_cm ?? '-'}`).join(' / ') : '';
+      const rec = m
+        ? Object.entries(m)
+            .map(
+              ([g, v]) =>
+                `${g === "fb" ? "앞뒤" : "좌우"} 1칸 ${v.avg_cm}cm → ${g === "fb" ? "PULSES_PER_CM_FWD" : "PULSES_PER_CM_STRAFE"} 추천 ${v.recommended_pulses_per_cm ?? "-"}`,
+            )
+            .join(" / ")
+        : "";
       const rot = s.nudge_model && s.nudge_model.rot;
-      const rotTxt = rot ? ` · 회전: 명령 대비 실제 x${rot.scale.toFixed(2)} (${rot.n}회) → 새 ROTATE_PULSES_PER_DEG = 지금 값 ÷ ${rot.scale.toFixed(2)}` : '';
-<<<<<<< HEAD
+      const rotTxt = rot
+        ? ` · 회전: 명령 대비 실제 x${rot.scale.toFixed(2)} (${rot.n}회) → 새 ROTATE_PULSES_PER_DEG = 지금 값 ÷ ${rot.scale.toFixed(2)}`
+        : "";
       const dc = s.dest_check;
-      const dcTxt = dc ? ` · 마지막 배송지 확인: ${dc.reason === 'ok' ? '정상' : dc.reason}${dc.error_cm ? ` (x ${dc.error_cm[0]}cm, y ${dc.error_cm[1]}cm)` : ''}` : '';
-      info.textContent = `${s.calibrated ? '기준 등록됨' : '기준 없음 (먼저 기준 등록)'}${s.job ? ` · 진행 중: ${s.job.kind === 'measure' ? '이동 거리 측정' : (s.job.where === 'dest' ? '배송지 보정' : '자동 보정')}` : ''}${rec ? ` · ${rec}` : ''}${rotTxt}${dcTxt}`;
-=======
-      info.textContent = `${s.calibrated ? '기준 등록됨' : '기준 없음 (먼저 기준 등록)'}${s.job ? ` · 진행 중: ${s.job.kind === 'measure' ? '이동 거리 측정' : '자동 보정'}` : ''}${rec ? ` · ${rec}` : ''}${rotTxt}`;
->>>>>>> 3fa91bc92a14e661857ab75603381a73ce6aaa0e
-    } catch (e) { info.textContent = `상태를 불러오지 못했습니다. ${e.message}`; }
+      const dcTxt = dc
+        ? ` · 마지막 배송지 확인: ${dc.reason === "ok" ? "정상" : dc.reason}${dc.error_cm ? ` (x ${dc.error_cm[0]}cm, y ${dc.error_cm[1]}cm)` : ""}`
+        : "";
+      info.textContent = `${s.calibrated ? "기준 등록됨" : "기준 없음 (먼저 기준 등록)"}${s.job ? ` · 진행 중: ${s.job.kind === "measure" ? "이동 거리 측정" : s.job.where === "dest" ? "배송지 보정" : "자동 보정"}` : ""}${rec ? ` · ${rec}` : ""}${rotTxt}${dcTxt}`;
+    } catch (e) {
+      info.textContent = `상태를 불러오지 못했습니다. ${e.message}`;
+    }
   };
 
-  const calBtn = btn('기준 등록', { kind: 'primary', block: true });
-  calBtn.addEventListener('click', async () => {
+  const calBtn = btn("기준 등록", { kind: "primary", block: true });
+  calBtn.addEventListener("click", async () => {
     const yes = await confirmDialog({
-      title: '로봇을 홈 칸 정중앙에, 북쪽을 똑바로 보게 놓았나요?',
-      message: '시작점에 놓기도 함께 처리되어 대기열과 진행 중인 배송이 초기화됩니다.',
-      yes: '기준 등록', no: '취소', danger: false,
+      title: "로봇을 홈 칸 정중앙에, 북쪽을 똑바로 보게 놓았나요?",
+      message:
+        "시작점에 놓기도 함께 처리되어 대기열과 진행 중인 배송이 초기화됩니다.",
+      yes: "기준 등록",
+      no: "취소",
+      danger: false,
     });
     if (!yes) return;
     await busy(calBtn, async () => {
       try {
         await api.placeAtStart();
         const r = await api.tagCalibrate();
-        toast(`기준을 등록했습니다. (태그 ID ${r.ref.tag_id}, 보이는 태그 ${r.tags.length}개)`, 'ok');
-      } catch (e) { toast(e.message, 'error'); }
+        toast(
+          `기준을 등록했습니다. (태그 ID ${r.ref.tag_id}, 보이는 태그 ${r.tags.length}개)`,
+          "ok",
+        );
+      } catch (e) {
+        toast(e.message, "error");
+      }
       refresh();
     });
   });
 
-  const detBtn = btn('지금 위치 확인', { block: true });
-  detBtn.addEventListener('click', () => busy(detBtn, async () => {
-    try {
-      const r = await api.tagDetect();
-      if (!r.calibrated) return toast('기준이 없습니다. 먼저 기준 등록을 하세요.', 'error');
-      if (r.recalibrate) return toast(r.recalibrate, 'error');
-      if (!r.located) return toast(`태그로 위치를 잴 수 없습니다. (보이는 태그 ${r.tags.length}개)`, 'error');
-      const l = r.located;
-      toast(`(${l.cell[0]}, ${l.cell[1]}) 칸 중앙에서 x ${l.offset_cm[0]}cm, y ${l.offset_cm[1]}cm${l.yaw_deg == null ? '' : `, ${l.yaw_deg}°`} · 태그 ${l.tag_ids.join(',')}`, 'ok');
-    } catch (e) { toast(e.message, 'error'); }
-  }));
+  const detBtn = btn("지금 위치 확인", { block: true });
+  detBtn.addEventListener("click", () =>
+    busy(detBtn, async () => {
+      try {
+        const r = await api.tagDetect();
+        if (!r.calibrated)
+          return toast("기준이 없습니다. 먼저 기준 등록을 하세요.", "error");
+        if (r.recalibrate) return toast(r.recalibrate, "error");
+        if (!r.located)
+          return toast(
+            `태그로 위치를 잴 수 없습니다. (보이는 태그 ${r.tags.length}개)`,
+            "error",
+          );
+        const l = r.located;
+        toast(
+          `(${l.cell[0]}, ${l.cell[1]}) 칸 중앙에서 x ${l.offset_cm[0]}cm, y ${l.offset_cm[1]}cm${l.yaw_deg == null ? "" : `, ${l.yaw_deg}°`} · 태그 ${l.tag_ids.join(",")}`,
+          "ok",
+        );
+      } catch (e) {
+        toast(e.message, "error");
+      }
+    }),
+  );
 
   // 엔코더 펌웨어(feat-robot main.cpp)의 1cm 당 펄스 값. 측정 결과는 이 값을 기준으로 비례 계산한다.
-  const fwd = h('input', { class: 'input', type: 'number', inputmode: 'decimal', step: '0.1', value: '32.5' });
-  const str = h('input', { class: 'input', type: 'number', inputmode: 'decimal', step: '0.1', value: '32.3' });
-  const measBtn = btn('이동 거리 측정', { block: true });
-  measBtn.addEventListener('click', async () => {
+  const fwd = h("input", {
+    class: "input",
+    type: "number",
+    inputmode: "decimal",
+    step: "0.1",
+    value: "32.5",
+  });
+  const str = h("input", {
+    class: "input",
+    type: "number",
+    inputmode: "decimal",
+    step: "0.1",
+    value: "32.3",
+  });
+  const measBtn = btn("이동 거리 측정", { block: true });
+  measBtn.addEventListener("click", async () => {
     const yes = await confirmDialog({
-      title: '이동 거리를 잴까요?',
-      message: '로봇이 홈에서 앞뒤·좌우로 1칸씩, 짧게 여러 번 움직이고, 카메라가 틀어짐을 잴 수 있으면 제자리 회전도 한 뒤 홈 중앙으로 돌아옵니다. 주변 칸을 비워 주세요. 1~2분 걸립니다.',
-      yes: '시작', no: '취소', danger: false,
+      title: "이동 거리를 잴까요?",
+      message:
+        "로봇이 홈에서 앞뒤·좌우로 1칸씩, 짧게 여러 번 움직이고, 카메라가 틀어짐을 잴 수 있으면 제자리 회전도 한 뒤 홈 중앙으로 돌아옵니다. 주변 칸을 비워 주세요. 1~2분 걸립니다.",
+      yes: "시작",
+      no: "취소",
+      danger: false,
     });
     if (!yes) return;
     await busy(measBtn, async () => {
       try {
-        const r = await api.measureMoves(Number(fwd.value) || 32.5, Number(str.value) || 32.3);
-        toast(r.measure_rot ? '측정을 시작했습니다 (회전 포함). 끝나면 이 화면에 추천값이 나옵니다.'
-                            : '측정을 시작했습니다. 홈에서 틀어짐을 잴 수 없어 회전은 재지 않습니다 (배운 회전 배율은 유지).', 'ok');
-      } catch (e) { toast(e.message, 'error'); }
+        const r = await api.measureMoves(
+          Number(fwd.value) || 32.5,
+          Number(str.value) || 32.3,
+        );
+        toast(
+          r.measure_rot
+            ? "측정을 시작했습니다 (회전 포함). 끝나면 이 화면에 추천값이 나옵니다."
+            : "측정을 시작했습니다. 홈에서 틀어짐을 잴 수 없어 회전은 재지 않습니다 (배운 회전 배율은 유지).",
+          "ok",
+        );
+      } catch (e) {
+        toast(e.message, "error");
+      }
       refresh();
     });
   });
 
   refresh();
   return [
-    h('h3', { style: { margin: '6px 0 0', fontSize: '15px' } }, 'AprilTag 위치 보정 (관리자)'),
+    h(
+      "h3",
+      { style: { margin: "6px 0 0", fontSize: "15px" } },
+      "AprilTag 위치 보정 (관리자)",
+    ),
     info,
     calBtn,
     detBtn,
-    field('지금 펌웨어 PULSES_PER_CM_FWD', fwd),
-    field('지금 펌웨어 PULSES_PER_CM_STRAFE', str),
+    field("지금 펌웨어 PULSES_PER_CM_FWD", fwd),
+    field("지금 펌웨어 PULSES_PER_CM_STRAFE", str),
     measBtn,
-    btn('상태 새로고침', { block: true, onClick: refresh }),
+    btn("상태 새로고침", { block: true, onClick: refresh }),
   ];
 }
