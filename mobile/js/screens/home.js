@@ -294,7 +294,8 @@ export default {
     root.append(robotCard, cta, returnBtn, quick, recent);
 
     let mapEl = mapBox;
-    function setMap(robot, blocked = []) {
+    let seenSensed = null; // 직전 폴링 때 센서가 막아 둔 칸 ("x,y"), 처음 한 번은 비교하지 않는다
+    function setMap(robot, blocked = [], path = []) {
       if (!grid) {
         mapEl.replaceChildren(
           h(
@@ -319,7 +320,21 @@ export default {
           c = b.x - 1;
         if (shown[r] && shown[r][c] === 0) shown[r][c] = 1;
       }
-      const next = gridView(shown, { dark: true, robot });
+      // 서버 path는 1부터 세고 현재 칸이 빠져 있음. gridView는 path.slice(1,-1)만 칠하므로 맨 앞에 로봇 칸을 넣는다
+      const fullPath =
+        robot && path.length
+          ? [[robot.x, robot.y], ...path.map(([x, y]) => [x - 1, y - 1])]
+          : [];
+      const next = gridView(shown, { dark: true, robot, path: fullPath });
+      // 주행 중에 막힌 칸은 지도 장애물과 다른 색으로: 센서 감지 = sensed, 앱에서 표시 = manual
+      const cols = grid[0].length;
+      for (const b of blocked) {
+        const r = b.y - 1,
+          c = b.x - 1;
+        if (!grid[r] || grid[r][c] !== 0) continue;
+        const cell = next.children[r * cols + c];
+        if (cell) cell.classList.add(b.manual ? "manual" : "sensed");
+      }
       next.setAttribute("aria-label", "공장 격자 지도와 로봇 위치");
       const keys = new Set(blocked.map((b) => `${b.x},${b.y}`));
       next.style.cursor = "pointer";
@@ -417,6 +432,17 @@ export default {
         if (!alive) return;
         const ob = await api.obstacles().catch(() => null);
         const blocked = ob && ob.blocked ? ob.blocked : [];
+        // 센서가 새 칸을 막았고 로봇이 계속 움직이면 = 다른 길로 재계산된 것
+        // (길이 없으면 manual_required 라서 setNav 경고가 대신 뜬다)
+        const sensed = new Set(
+          blocked.filter((b) => !b.manual).map((b) => `${b.x},${b.y}`),
+        );
+        const added = seenSensed
+          ? [...sensed].filter((k) => !seenSensed.has(k))
+          : [];
+        if (added.length && ob.nav_status === "moving")
+          toast(`장애물 감지 (${added.join(") (")}) · 경로를 다시 계산했습니다.`, "ok");
+        seenSensed = sensed;
         const r = s.robot_status || {};
         conn.className = "conn";
         conn.textContent = "연결됨";
@@ -430,6 +456,7 @@ export default {
         setMap(
           hasPos ? { x: r.current_x - 1, y: r.current_y - 1 } : null,
           blocked,
+          ob && ob.path ? ob.path : [],
         );
         setStage(r.status);
         setNav(ob);
@@ -444,7 +471,7 @@ export default {
     }
 
     loadStatic().then(pollStatus);
-    const timer = setInterval(pollStatus, 3000);
+    const timer = setInterval(pollStatus, 1500);
 
     return () => {
       alive = false;
