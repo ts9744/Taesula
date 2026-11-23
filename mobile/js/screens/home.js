@@ -295,7 +295,7 @@ export default {
 
     let mapEl = mapBox;
     let seenSensed = null; // 직전 폴링 때 센서가 막아 둔 칸 ("x,y"), 처음 한 번은 비교하지 않는다
-    function setMap(robot, blocked = [], path = [], trail = []) {
+    function setMap(robot, blocked = [], path = [], trail = [], goal = null) {
       if (!grid) {
         mapEl.replaceChildren(
           h(
@@ -315,6 +315,14 @@ export default {
       }
 
       const shown = grid.map((row) => row.slice());
+      // 배송·복귀 중(goal 있음)에는 지금 가는 목적지만 남기고 다른 목적지는 숨긴다. 끝나면(goal 없음) 다시 모두 표시
+      if (goal) {
+        shown.forEach((row, r) =>
+          row.forEach((v, c) => {
+            if (v === 3 && !(goal[0] === c + 1 && goal[1] === r + 1)) row[c] = 0;
+          }),
+        );
+      }
       for (const b of blocked) {
         const r = b.y - 1,
           c = b.x - 1;
@@ -466,6 +474,7 @@ export default {
           blocked,
           ob && ob.path ? ob.path : [],
           ob && ob.trail ? ob.trail : [],
+          ob && ob.goal ? ob.goal : null,
         );
         setStage(r.status);
         setNav(ob);
