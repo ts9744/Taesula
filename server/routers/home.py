@@ -109,8 +109,10 @@ def start_return():
     if pos == home:
         state.mission = None
         state.goal = None
+        obstacle.reset_trail()      # 이미 홈: 남아 있던 배송 경로를 지운다
         return {"status": "already_home", "home": list(home)}
 
+    obstacle.reset_trail()
     state.goal = home
     state.mission = "return"
     state.current_item_qr = None

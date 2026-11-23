@@ -272,6 +272,7 @@ def start_delivery(qr_code):
     state.current_item_qr = item_qr_code
     state.current_steps = 0
     state.mission = "deliver"
+    obstacle.reset_trail()          # 같은 목적지로 다시 배송해도 이전 경로가 이어 붙지 않게
     state.return_at = None          # 복귀 대기 중에 새 배송이 들어오면 복귀 예약 취소
 
     # 배송 시작: 물품과 로봇 상태를 이동 중으로 변경

@@ -52,6 +52,12 @@ def _trail_key():
     return (getattr(state, "mission", None), None if goal is None else tuple(goal))
 
 
+def reset_trail():
+    """앱 지도의 '왔던 길'을 지운다. 새 배송/복귀를 시작할 때, 로봇을 시작점에 직접 놓았을 때 부른다."""
+    state.trail = []
+    state.trail_key = None
+
+
 def _trail_step(new):
     """로봇 위치가 old -> new 로 바뀔 때 지나간 칸을 state.trail 에 쌓는다."""
     key = _trail_key()
