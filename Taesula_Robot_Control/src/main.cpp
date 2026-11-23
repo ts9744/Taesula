@@ -146,6 +146,20 @@ float gPulsesPerCell = 1;
 unsigned long gRunMs = 1000;
 bool  gUsedEnc = false;       // 이번 이동이 실제로 엔코더 방식으로 끝났는지
 
+// [2026-11-23] 여러 칸 이동 중 '목표 칸 안'의 장애물을 미리 보고 그 앞 칸 중앙에서 감속 정지
+//   예전: 출발 전 점검은 바로 다음 칸만 보고(37/41cm), 이동 중에는 STOP_DISTANCE_*(15cm) 에서 급정지
+//         -> right 2 의 두 번째 칸 박스는 가까워져서야 알아채 급정지했다 (부딪히거나 칸 중간에 섬)
+//   지금: 이동 중 센서 값으로 물체 앞면 위치(출발 칸 중앙 기준)를 계산해서
+//         목표 칸 중앙 + 반 칸 - AHEAD_MARGIN_CM 보다 가까우면(= 목표 칸 안), 물체 앞 마지막 빈 칸으로 목표를 줄인다
+//         목표 칸 너머의 벽/장애물은 무시한다
+//   이미 너무 가까워 감속할 거리가 없으면 예전처럼 급정지 (STOP_DISTANCE / SNAP / 칸 중앙 복귀 그대로)
+//   결과는 OBSTACLE <방향> <간 칸 수> 0 <그 칸 중앙에서 센서~물체 cm> (서버 형식 그대로)
+const float SONAR_OFFSET_CM[SONAR_COUNT] = {11.5, 6.5, 11.5, 6.5};   // 로봇 중심 -> 센서 (front, left, back, right). 서버와 같게
+const float AHEAD_MARGIN_CM = 3.0;
+bool  gCellMove = false;      // 칸 이동 중일 때만 (nudge / 칸 중앙 복귀에는 안 씀)
+long  gLimitCells = -1;       // 줄인 목표 (칸 수), -1 = 안 줄임
+float gLimitDist = -1;
+
 // ===============================
 // [2026-11-19] 제자리 회전 (AprilTag 방향 보정용)
 //   rotate 5  -> 오른쪽(시계)으로 5도 / rotate -5 -> 왼쪽으로 5도
@@ -790,7 +804,9 @@ void handleLine(String line) {
     if (totalMs > over + 100) totalMs -= over;
   }
 
+  gCellMove = true;
   RunResult r = runTimed(action, totalMs, sensor, ranMs, stopDist);
+  gCellMove = false;
 
   if (PRINT_ENCODER) {
     printEncoder(dir == "right" ? 1 : (dir == "left" ? 2 : (dir == "backward" ? 3 : 0)));
@@ -897,6 +913,9 @@ RunResult runTimed(
   long target = gTargetPulses;
   bool encMode = (target > 0);
   gUsedEnc = encMode;
+  gLimitCells = -1;
+  gLimitDist = -1;
+  int aheadHits = 0;
 
   currentAction = action;
   action();
@@ -971,9 +990,43 @@ RunResult runTimed(
         Serial.println(d, 1);
       }
 
+      // 목표 칸 안에 물체가 있으면 목표를 그 앞 칸으로 줄인다 (칸 이동 + 엔코더 방식일 때만)
+      bool late = false;
+      if (gCellMove && encMode && d > 0) {
+        float ppc  = gPulsesPerCell / CELL_CM;
+        long  avg  = encAvg();
+        float face = (float)avg / ppc + SONAR_OFFSET_CM[sensor] + d;    // 출발 칸 중앙 기준 물체 앞면 (cm)
+        float tgt  = (float)target / ppc;
+        if (face < tgt + CELL_CM / 2 - AHEAD_MARGIN_CM) aheadHits++;
+        else aheadHits = 0;
+        if (aheadHits >= CONFIRM_COUNT) {
+          float q = (face - CELL_CM / 2) / CELL_CM;
+          long k = (q < 0) ? 0 : (long)q;                               // 물체 앞에 있는 빈 칸 수
+          long newTarget = (long)(k * gPulsesPerCell);
+          if (newTarget < target) {
+            if (newTarget - gStopEarly > avg) {                         // 감속할 거리가 있다
+              target = newTarget;
+              gLimitCells = k;
+              gLimitDist = face - k * CELL_CM - SONAR_OFFSET_CM[sensor];
+              if (PRINT_DISTANCE) {
+                Serial.print("AHEAD limit ");
+                Serial.print(k);
+                Serial.print(" cells, obstacle at ");
+                Serial.println(gLimitDist, 1);
+              }
+            } else {
+              late = true;                                              // 늦었다: 아래 급정지로
+            }
+          }
+          aheadHits = 0;
+        }
+      }
+
        // 기준 이하가 연속 CONFIRM_COUNT 번이면 정지 (앞뒤/좌우 기준 따로)
       float stopCm = (sensor == S_LEFT || sensor == S_RIGHT) ? STOP_DISTANCE_LR_CM : STOP_DISTANCE_FB_CM;
-      if (d > 0 && d <= stopCm) {
+      if (late) {
+        hits = CONFIRM_COUNT;
+      } else if (d > 0 && d <= stopCm) {
         hits++;
       } else {
         hits = 0;
@@ -1017,6 +1070,11 @@ RunResult runTimed(
     ranMs = (unsigned long)((float)target / gPulsesPerCell * (float)gRunMs);
   } else {
     ranMs = ms;
+  }
+  if (gLimitCells >= 0) {             // 장애물 앞 칸 중앙에서 섰다: 장애물로 보고 (msInCell = 0 이라 복귀/SNAP 없음)
+    ranMs = (unsigned long)gLimitCells * gRunMs;
+    stopDist = gLimitDist;
+    return RUN_OBSTACLE;
   }
   return RUN_DONE;
 }
