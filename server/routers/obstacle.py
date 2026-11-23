@@ -415,10 +415,11 @@ def get_obstacles():
         cur = (cur[0] + d[0], cur[1] + d[1])
         path.append([cur[0] + 1, cur[1] + 1])
 
-    # 왔던 길: 지금 배송/복귀 중이거나, 막 끝나서 다음 임무가 시작되기 전이면 보여 준다
+    # 왔던 길: 지금 배송/복귀 중이거나, 배송을 막 끝낸 뒤(복귀 전)이면 보여 준다. 홈 복귀가 끝나면 지운다
     key = _trail_key()
     trail = []
-    if getattr(state, "trail_key", None) is not None and key in (state.trail_key, (None, None)):
+    tk = getattr(state, "trail_key", None)
+    if tk is not None and (key == tk or (key == (None, None) and tk[0] != "return")):
         trail = [[c[0] + 1, c[1] + 1] for c in getattr(state, "trail", [])]
 
     return {
