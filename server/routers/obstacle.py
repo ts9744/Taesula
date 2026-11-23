@@ -47,7 +47,36 @@ def _robot_pos():
     return None if not row else (row[0] - 1, row[1] - 1)
 
 
+def _trail_key():
+    goal = getattr(state, "goal", None)
+    return (getattr(state, "mission", None), None if goal is None else tuple(goal))
+
+
+def _trail_step(new):
+    """로봇 위치가 old -> new 로 바뀔 때 지나간 칸을 state.trail 에 쌓는다."""
+    key = _trail_key()
+    if key == (None, None):                       # 수동 이동 등 배송/복귀가 아닐 때는 기록하지 않는다
+        return
+    old = _robot_pos()
+    if getattr(state, "trail_key", None) != key or not getattr(state, "trail", None):
+        state.trail_key = key
+        state.trail = [old] if old is not None else []
+    if old is None or tuple(new) == old:
+        return
+    if not state.trail or state.trail[-1] != old:
+        state.trail.append(old)
+    dx, dy = new[0] - old[0], new[1] - old[1]
+    if dx == 0 or dy == 0:                        # 한 방향 묶음 이동: 사이 칸도 모두 기록
+        n = max(abs(dx), abs(dy))
+        sx, sy = (dx > 0) - (dx < 0), (dy > 0) - (dy < 0)
+        for i in range(1, n + 1):
+            state.trail.append((old[0] + sx * i, old[1] + sy * i))
+    else:
+        state.trail.append(tuple(new))
+
+
 def _save_robot(pos, status):
+    _trail_step(pos)
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
@@ -372,13 +401,25 @@ def get_obstacles():
     expire_blocked()
     pos, goal = _robot_pos(), getattr(state, "goal", None)
 
-    path, cur = [], pos                      # 앞으로 갈 칸 (남은 명령을 칸으로 풀어 줌)
-    for cmd in list(getattr(state, "current_path", []) or []):
+    # 앞으로 갈 칸 (남은 명령을 칸으로 풀어 줌).
+    # 지금 가고 있는 묶음 이동은 current_path 에서 이미 빠졌고 DB 위치는 아직 출발 칸이므로 앞에 붙인다
+    cmds = list(getattr(state, "current_path", []) or [])
+    pm = getattr(state, "pending_move", None)
+    if pm in MOVE_DELTA:
+        cmds = [pm] * max(1, getattr(state, "pending_steps", 1)) + cmds
+    path, cur = [], pos
+    for cmd in cmds:
         d = MOVE_DELTA.get(cmd)
         if cur is None or d is None:
             continue
         cur = (cur[0] + d[0], cur[1] + d[1])
         path.append([cur[0] + 1, cur[1] + 1])
+
+    # 왔던 길: 지금 배송/복귀 중이거나, 막 끝나서 다음 임무가 시작되기 전이면 보여 준다
+    key = _trail_key()
+    trail = []
+    if getattr(state, "trail_key", None) is not None and key in (state.trail_key, (None, None)):
+        trail = [[c[0] + 1, c[1] + 1] for c in getattr(state, "trail", [])]
 
     return {
         "nav_status": getattr(state, "nav_status", None) or "idle",   # idle / moving / manual_required
@@ -390,6 +431,7 @@ def get_obstacles():
                    + [{"x": c[0] + 1, "y": c[1] + 1, "manual": True, "expires_in_sec": None}
                       for c in sorted(manual_blocked)],
         "path": path,
+        "trail": trail,
         "home_check": getattr(state, "home_check", None),
         "home_misaligned": getattr(state, "home_misaligned", False),
         "tag_job": (None if not getattr(state, "tag_job", None) else

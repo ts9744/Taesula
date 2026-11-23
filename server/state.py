@@ -18,6 +18,10 @@ return_at = None        # 자동 복귀 예약 시각 (time.time() 기준)
 
 placed_at = 0.0
 
+# 앱 지도에 '왔던 길'을 그리기 위한 기록 (obstacle._save_robot 에서 채운다)
+trail = []              # 이번 배송/복귀에서 지나온 칸 [(x, y), ...] 0부터 시작
+trail_key = None        # (mission, goal) - 바뀌면 새 배송/복귀로 보고 trail 을 새로 시작한다
+
 # AprilTag 홈 위치 확인 (server/routers/apriltag.py)
 home_check = None       # 마지막 확인 결과
 home_misaligned = False # True 면 대기열 출발/새 배송을 막는다 (시작점에 놓기 또는 다시 확인으로 해제)

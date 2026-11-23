@@ -295,7 +295,7 @@ export default {
 
     let mapEl = mapBox;
     let seenSensed = null; // 직전 폴링 때 센서가 막아 둔 칸 ("x,y"), 처음 한 번은 비교하지 않는다
-    function setMap(robot, blocked = [], path = []) {
+    function setMap(robot, blocked = [], path = [], trail = [], goal = null) {
       if (!grid) {
         mapEl.replaceChildren(
           h(
@@ -315,6 +315,14 @@ export default {
       }
 
       const shown = grid.map((row) => row.slice());
+      // 배송·복귀 중(goal 있음)에는 지금 가는 목적지만 남기고 다른 목적지는 숨긴다. 끝나면(goal 없음) 다시 모두 표시
+      if (goal) {
+        shown.forEach((row, r) =>
+          row.forEach((v, c) => {
+            if (v === 3 && !(goal[0] === c + 1 && goal[1] === r + 1)) row[c] = 0;
+          }),
+        );
+      }
       for (const b of blocked) {
         const r = b.y - 1,
           c = b.x - 1;
@@ -326,6 +334,14 @@ export default {
           ? [[robot.x, robot.y], ...path.map(([x, y]) => [x - 1, y - 1])]
           : [];
       const next = gridView(shown, { dark: true, robot, path: fullPath });
+      // 왔던 길: 남은 경로(path)와 겹치는 칸은 남은 경로 색을 그대로 둔다
+      for (const [x, y] of trail) {
+        const r = y - 1,
+          c = x - 1;
+        if (!shown[r] || shown[r][c] !== 0) continue;
+        const cell = next.children[r * shown[0].length + c];
+        if (cell && !cell.classList.contains("path")) cell.classList.add("trail");
+      }
       // 주행 중에 막힌 칸은 지도 장애물과 다른 색으로: 센서 감지 = sensed, 앱에서 표시 = manual
       const cols = grid[0].length;
       for (const b of blocked) {
@@ -457,6 +473,8 @@ export default {
           hasPos ? { x: r.current_x - 1, y: r.current_y - 1 } : null,
           blocked,
           ob && ob.path ? ob.path : [],
+          ob && ob.trail ? ob.trail : [],
+          ob && ob.goal ? ob.goal : null,
         );
         setStage(r.status);
         setNav(ob);
