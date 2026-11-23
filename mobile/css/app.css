@@ -715,6 +715,10 @@ a:focus-visible,
   background: var(--path);
   border-color: var(--path-line);
 }
+.grid-map.dark .cell.trail {
+  background: rgba(127, 212, 214, 0.35);
+  border-color: rgba(127, 212, 214, 0.55);
+}
 .grid-map.dark .cell.v1.sensed {
   background: #f08a7a;
   border-color: #f08a7a;
