@@ -419,7 +419,8 @@ def get_obstacles():
     key = _trail_key()
     trail = []
     tk = getattr(state, "trail_key", None)
-    if tk is not None and (key == tk or (key == (None, None) and tk[0] != "return")):
+    # 도착 직후에는 mission 은 None 이지만 goal 은 남아 있다 (None, goal) - 이때도 배송 경로를 보여 준다
+    if tk is not None and (key == tk or (key[0] is None and tk[0] != "return")):
         trail = [[c[0] + 1, c[1] + 1] for c in getattr(state, "trail", [])]
 
     return {

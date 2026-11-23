@@ -156,6 +156,7 @@ bool  gUsedEnc = false;       // 이번 이동이 실제로 엔코더 방식으�
 //   결과는 OBSTACLE <방향> <간 칸 수> 0 <그 칸 중앙에서 센서~물체 cm> (서버 형식 그대로)
 const float SONAR_OFFSET_CM[SONAR_COUNT] = {11.5, 6.5, 11.5, 6.5};   // 로봇 중심 -> 센서 (front, left, back, right). 서버와 같게
 const float AHEAD_MARGIN_CM = 3.0;
+const float AHEAD_MAX_CM = 40.0;   // [2026-11-23] 이보다 먼 값은 AHEAD 에 안 씀 (멀면 빔이 넓어져 대각선 박스를 잡음)
 bool  gCellMove = false;      // 칸 이동 중일 때만 (nudge / 칸 중앙 복귀에는 안 씀)
 long  gLimitCells = -1;       // 줄인 목표 (칸 수), -1 = 안 줄임
 float gLimitDist = -1;
@@ -182,7 +183,7 @@ const float ROT_SMALL_SE_FRAC  = 0.40;
 // [팀원 3035c71 반영] 출발 전 장애물 점검
 //   가는 방향 센서로 3번 재서 가운데 값이 BLOCK_DISTANCE_CM 이하면 출발하지 않고
 //   OBSTACLE <방향> 0 0 <거리> 로 보고 (칸 34cm 기준: 다음 칸 장애물 -> 37cm)
-const long BLOCK_DISTANCE_CM[SONAR_COUNT] = {37, 41, 37, 41};   // front, left, back, right
+const long BLOCK_DISTANCE_CM[SONAR_COUNT] = {37, 37, 37, 37};   // front, left, back, right
 const int  PRECHECK_SAMPLES = 3;
 
 // [2026-11-19] 장애물로 멈춘 뒤 칸 중앙으로 복귀
@@ -256,8 +257,8 @@ const float WHEELBASE_CM = 0;   // 앞 바퀴 중심 ~ 뒤 바퀴 중심
 // ===============================
 // 이동 중 장애물 감지
 // ===============================
-const float STOP_DISTANCE_FB_CM = 15.0;   // 앞/뒤 센서
-const float STOP_DISTANCE_LR_CM = 15.0;   // 좌/우 센서 (칸 중앙에서 옆 칸 경계 10.5cm)
+const float STOP_DISTANCE_FB_CM = 10.0;   // 앞/뒤 센서
+const float STOP_DISTANCE_LR_CM = 10.0;   // 좌/우 센서 (칸 중앙에서 옆 칸 경계 10.5cm)
 const unsigned long SENSOR_INTERVAL_MS = 50;    // 이동 중 측정 간격
 const int CONFIRM_COUNT = 2;                    // 연속 2번 이하일 때만 정지 (튀는 값 무시)
 bool PRINT_DISTANCE = false;                    // debug on 으로 켜기 (시연 땐 off)
@@ -992,7 +993,7 @@ RunResult runTimed(
 
       // 목표 칸 안에 물체가 있으면 목표를 그 앞 칸으로 줄인다 (칸 이동 + 엔코더 방식일 때만)
       bool late = false;
-      if (gCellMove && encMode && d > 0) {
+      if (gCellMove && encMode && d > 0 && d <= AHEAD_MAX_CM) {
         float ppc  = gPulsesPerCell / CELL_CM;
         long  avg  = encAvg();
         float face = (float)avg / ppc + SONAR_OFFSET_CM[sensor] + d;    // 출발 칸 중앙 기준 물체 앞면 (cm)
@@ -1000,7 +1001,9 @@ RunResult runTimed(
         if (face < tgt + CELL_CM / 2 - AHEAD_MARGIN_CM) aheadHits++;
         else aheadHits = 0;
         if (aheadHits >= CONFIRM_COUNT) {
-          float q = (face - CELL_CM / 2) / CELL_CM;
+          // 칸 중앙에 섰을 때 센서~물체 간격이 AHEAD_MARGIN_CM(3cm) 이상 남는 칸까지 갈 수 있음
+          //   = 출발 전 점검 기준(BLOCK_DISTANCE_CM 37 = 34 + 3)과 같은 판단
+          float q = (face - SONAR_OFFSET_CM[sensor] - AHEAD_MARGIN_CM) / CELL_CM;
           long k = (q < 0) ? 0 : (long)q;                               // 물체 앞에 있는 빈 칸 수
           long newTarget = (long)(k * gPulsesPerCell);
           if (newTarget < target) {
