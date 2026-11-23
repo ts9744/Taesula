@@ -711,6 +711,18 @@ a:focus-visible,
   background: #8fa6a8;
   border-color: #8fa6a8;
 }
+.grid-map.dark .cell.path {
+  background: var(--path);
+  border-color: var(--path-line);
+}
+.grid-map.dark .cell.v1.sensed {
+  background: #f08a7a;
+  border-color: #f08a7a;
+}
+.grid-map.dark .cell.v1.manual {
+  background: #f2c14e;
+  border-color: #f2c14e;
+}
 .grid-map.dark .cell.robot::after {
   background: var(--accent-bright);
   box-shadow: 0 0 0 1.5px var(--accent-bright);
