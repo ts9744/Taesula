@@ -52,6 +52,12 @@ def _trail_key():
     return (getattr(state, "mission", None), None if goal is None else tuple(goal))
 
 
+def reset_trail():
+    """앱 지도의 '왔던 길'을 지운다. 새 배송/복귀를 시작할 때, 로봇을 시작점에 직접 놓았을 때 부른다."""
+    state.trail = []
+    state.trail_key = None
+
+
 def _trail_step(new):
     """로봇 위치가 old -> new 로 바뀔 때 지나간 칸을 state.trail 에 쌓는다."""
     key = _trail_key()
@@ -415,10 +421,12 @@ def get_obstacles():
         cur = (cur[0] + d[0], cur[1] + d[1])
         path.append([cur[0] + 1, cur[1] + 1])
 
-    # 왔던 길: 지금 배송/복귀 중이거나, 막 끝나서 다음 임무가 시작되기 전이면 보여 준다
+    # 왔던 길: 지금 배송/복귀 중이거나, 배송을 막 끝낸 뒤(복귀 전)이면 보여 준다. 홈 복귀가 끝나면 지운다
     key = _trail_key()
     trail = []
-    if getattr(state, "trail_key", None) is not None and key in (state.trail_key, (None, None)):
+    tk = getattr(state, "trail_key", None)
+    # 도착 직후에는 mission 은 None 이지만 goal 은 남아 있다 (None, goal) - 이때도 배송 경로를 보여 준다
+    if tk is not None and (key == tk or (key[0] is None and tk[0] != "return")):
         trail = [[c[0] + 1, c[1] + 1] for c in getattr(state, "trail", [])]
 
     return {

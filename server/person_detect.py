@@ -8,16 +8,16 @@ PERSON_MAX_WAITS 번 연속으로 사람이 보이면 일반 장애물로 처리
 - 카메라는 로봇 앞(격자 북쪽)만 보므로 forward 이동에서만 판단한다.
 - 카메라/YOLO 가 실패하거나 모델에 'Leg' 클래스가 없으면 사람이 아닌 것으로 본다 (지금까지와 같은 동작).
 """
-PERSON_LABELS = ("Leg", "Cone" )           # detector.CLASS_NAMES 에 들어갈 이름
-PERSON_MIN_SCORE = 0.3          # 이 점수 이상인 박스만 사람으로 본다
+PERSON_LABELS = ("Leg",)          # detector.CLASS_NAMES 에 들어갈 이름
+PERSON_MIN_SCORE = 0.35         # 이 점수 이상인 박스만 사람으로 본다
 PERSON_MIN_HEIGHT_RATIO = 0.2   # 박스 높이가 화면 높이의 이 비율 이상 (멀리 있는 사람은 무시)
 PERSON_WAIT_SEC = 3.0           # 한 번 기다리는 시간
-PERSON_MAX_WAITS = 5            # 연속 대기 최대 횟수 (넘으면 일반 장애물)
+PERSON_MAX_WAITS = 3            # 연속 대기 최대 횟수 (넘으면 일반 장애물)
 CAMERA_DIRECTIONS = ("forward",)
 
 
 def _is_person(det, frame_h):
-    if det.get("label") != PERSON_LABELS or det.get("score", 0) < PERSON_MIN_SCORE:
+    if det.get("label") not in PERSON_LABELS or det.get("score", 0) < PERSON_MIN_SCORE:
         return False
     x1, y1, x2, y2 = det["box"]
     return (y2 - y1) >= frame_h * PERSON_MIN_HEIGHT_RATIO
@@ -26,11 +26,15 @@ def _is_person(det, frame_h):
 def person_ahead():
     """앞쪽 카메라에 사람 다리가 보이면 True. 실패하면 False (일반 장애물로 처리되게)."""
     try:
-        from server.camera.camera import get_frame
-        from server.camera.detector import detect
+        import cv2
+        from server.camera.camera import get_frame      # 이미 rotate_frame() 으로 똑바로 세운 프레임
+        from server.camera.detector import detect, draw_detections
         frame = get_frame()
         dets = detect(frame)
+        cv2.imwrite("/tmp/person_raw.jpg", draw_detections(frame.copy(), dets))
     except Exception as e:                      # 카메라/Hailo 없음, 추론 실패 등
-        print("person detect skipped:", e)
+        print("person detect skipped:", e, flush=True)
         return False
-    return any(_is_person(d, frame.shape[0]) for d in dets)
+    found = any(_is_person(d, frame.shape[0]) for d in dets)
+    print(f"[person] found={found} {dets}", flush=True)
+    return found

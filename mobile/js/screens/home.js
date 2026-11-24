@@ -294,6 +294,7 @@ export default {
     root.append(robotCard, cta, returnBtn, quick, recent);
 
     let mapEl = mapBox;
+    let lastDest = null; // 마지막으로 배송한 목적지 [x, y] (1부터) - 복귀 중에도 초록색으로 남긴다
     let seenSensed = null; // 직전 폴링 때 센서가 막아 둔 칸 ("x,y"), 처음 한 번은 비교하지 않는다
     function setMap(robot, blocked = [], path = [], trail = [], goal = null) {
       if (!grid) {
@@ -316,10 +317,15 @@ export default {
 
       const shown = grid.map((row) => row.slice());
       // 배송·복귀 중(goal 있음)에는 지금 가는 목적지만 남기고 다른 목적지는 숨긴다. 끝나면(goal 없음) 다시 모두 표시
+      // 복귀 중에는 goal 이 홈이므로, 방금 배송한 목적지(lastDest)도 초록색으로 남긴다
+      if (goal && grid[goal[1] - 1] && grid[goal[1] - 1][goal[0] - 1] === 3) lastDest = goal;
+      if (!goal) lastDest = null;
+      const keep = (c, r) =>
+        [goal, lastDest].some((g) => g && g[0] === c + 1 && g[1] === r + 1);
       if (goal) {
         shown.forEach((row, r) =>
           row.forEach((v, c) => {
-            if (v === 3 && !(goal[0] === c + 1 && goal[1] === r + 1)) row[c] = 0;
+            if (v === 3 && !keep(c, r)) row[c] = 0;
           }),
         );
       }
