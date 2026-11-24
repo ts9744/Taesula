@@ -4,6 +4,7 @@ from algorithm.astar import a_star
 from server import state
 from server.database import get_db, load_grid_from_db
 from server.routers import obstacle
+import time
 
 
 router = APIRouter()
@@ -106,6 +107,7 @@ def enqueue(qr_code):
         "current_qr": state.current_item_qr,
     }
 
+LOAD_DELAY_SEC = 3.0
 
 @router.get("/route/{qr_code}")
 def get_route_by_qr(qr_code: str):
@@ -126,8 +128,10 @@ def get_route_by_qr(qr_code: str):
         # 지금 배송 -> 도착 -> 시작점 복귀까지 끝난 뒤 시작점에서 출발한다 (home.maybe_start_queued)
         if robot_busy():
             return enqueue(qr_code)
-
-        return start_delivery(qr_code)
+        result = start_delivery(qr_code)
+        if result.get("message") == "route found":
+            state.depart_at = time.time() + LOAD_DELAY_SEC
+        return result
 
 
 def start_delivery(qr_code):

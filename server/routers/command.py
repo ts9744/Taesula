@@ -8,6 +8,7 @@ from server.schemas.request_models import (
     CommandRequest,
     PathRequest,
 )
+import time
 
 
 router = APIRouter()
@@ -47,13 +48,17 @@ def _next_command():
 
     # 사람이 비키길 기다리는 중: 브리지는 'path is empty' 를 받으면 잠시 쉬었다 다시 묻는다
     if obstacle.person_wait_hold():
-        return {
-            "direction": "stop",
-            "steps": 0,
-            "message": "path is empty",
-            "waiting": "person",
-            "remaining_path": state.current_path,
-        }
+        depart_at = getattr(state, "depart_at", None)
+        if depart_at is not None:
+            if time.time() < depart_at:
+                return {
+                    "direction": "stop",
+                    "steps": 0,
+                    "message": "path is empty",
+                    "waiting": "loading",
+                    "remaining_path": state.current_path,
+                }
+            state.depart_at = None
 
     # 옆이동 전후: AprilTag 로 칸 중앙인지 확인하고, 어긋났으면 nudge 로 맞춘 뒤 출발한다
     from server.routers import apriltag
